@@ -156,12 +156,35 @@ class CreateUserAPIView(APIView):
 from rest_framework import generics
 from rest_framework.response import Response
 from rest_framework import status
+from .models import Provider
+from .serializers import ProviderSerializer
+from rest_framework.permissions import AllowAny
+
+class ProviderCreateView(generics.CreateAPIView):
+    queryset = Provider.objects.all()
+    serializer_class = ProviderSerializer
+    permission_classes = [AllowAny]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+from rest_framework import generics
+from rest_framework.response import Response
+from rest_framework import status
 from .models import Subscription, Provider
 from .serializers import SubscriptionSerializer
+from rest_framework import permissions
 
 class SubscriptionCreateView(generics.CreateAPIView):
     queryset = Subscription.objects.all()
     serializer_class = SubscriptionSerializer
+    permission_classes = [AllowAny]  # Ensure any user can add subscriptions
+    # permission_classes = [permissions.IsAuthenticated]  # Ensure only authenticated users can add subscriptions
+
 
     def create(self, request, *args, **kwargs):
         provider_id = request.data.get('provider')
@@ -173,5 +196,6 @@ class SubscriptionCreateView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
             serializer.save()
+            # serializer.save(user=request.user)  # Assign logged-in user to Subscription
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

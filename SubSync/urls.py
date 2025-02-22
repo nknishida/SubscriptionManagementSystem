@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import LoginAPIView, ForgotPasswordAPIView, ResetPasswordAPIView, CreateUserAPIView, SubscriptionCreateView
+from .views import LoginAPIView, ForgotPasswordAPIView, ResetPasswordAPIView, CreateUserAPIView, SubscriptionCreateView, ProviderCreateView
 
 urlpatterns = [
     path('login/', LoginAPIView.as_view(), name='login'),
@@ -7,6 +7,7 @@ urlpatterns = [
     path('reset-password/', ResetPasswordAPIView.as_view(), name='reset_password'),
     path('create-user/', CreateUserAPIView.as_view(), name='create-user'),
     path('add-subscription/', SubscriptionCreateView.as_view(), name='add-subscription'),
+    path('providers/', ProviderCreateView.as_view(), name='provider-create'),
 
 
 
