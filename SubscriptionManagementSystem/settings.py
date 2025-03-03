@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     'SubSync',
     'corsheaders',
     'rest_framework_simplejwt',
+    'django_filters',
 
 ]
 
@@ -69,12 +70,15 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+    'DEFAULT_FILTER_BACKENDS': [
+        'django_filters.rest_framework.DjangoFilterBackend'],
+        
 }
 
 
 # CORS_ALLOWED_ORIGINS = [
 #     "http://localhost:3000", 
-#     "http://192.168.251.97:3000", # Your frontend (React)
+#     "http://192.168.251.92:3000", # Your frontend (React)
     
 # ]
 
@@ -192,7 +196,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 from datetime import timedelta
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),  # Token valid for 1 hour
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=2),  # Token valid for 1 hour
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),  # Refresh token valid for 7 days
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,

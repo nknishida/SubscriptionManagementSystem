@@ -363,7 +363,7 @@ class Hardware(models.Model):
     serial_number = models.CharField(max_length=100, unique=True)
     assigned_dept = models.CharField(max_length=255)
 
-    resource = models.ForeignKey(Resource, on_delete=models.CASCADE, related_name='devices')
+    # resource = models.ForeignKey(Resource, on_delete=models.CASCADE, related_name='devices')
     
     status = models.CharField(max_length=50, choices=STATUS_CHOICES)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -383,7 +383,6 @@ class Warranty(models.Model):
     warranty_provider = models.CharField(max_length=50)
     # warranty_status = models.CharField(max_length=20, choices=STATUS_CHOICES)
     warranty_start_date = models.DateTimeField()
-    
     original_warranty_duration = models.TextField()
     extended_warranty= models.BooleanField()
     extended_period = models.TextField()
@@ -427,12 +426,13 @@ class HardwareService(models.Model):
     service_provider = models.CharField(max_length=50)
     service_provider_contact = models.CharField(max_length=100)
     service_cost = models.CharField(max_length=20, choices=STATUS_CHOICES)
+    last_service_date = models.DateField(blank=True, null=True)
     no_of_services_done= models.IntegerField()
     no_of_free_services = models.IntegerField()
     service_period = models.CharField(max_length=50)
     free_services_used = models.IntegerField()
     free_service_date= models.DateTimeField()
-    last_service_date = models.DateField(blank=True, null=True)
+    
     hardware= models.OneToOneField(Hardware, on_delete=models.CASCADE, related_name="service")
 
     @property
@@ -513,3 +513,16 @@ class Reminder(models.Model):
             reminder_date=reminder_date,
             sent_to=subscription.reminder_email
         )
+
+class ReminderSubscription(models.Model):
+    reminder = models.ForeignKey(Reminder, on_delete=models.CASCADE)
+    subscription = models.ForeignKey('Subscription', on_delete=models.CASCADE)
+
+class ReminderHardware(models.Model):
+    reminder = models.ForeignKey(Reminder, on_delete=models.CASCADE)
+    hardware = models.ForeignKey('Hardware', on_delete=models.CASCADE)
+
+class ReminderCustomer(models.Model):
+    reminder = models.ForeignKey(Reminder, on_delete=models.CASCADE)
+    customer = models.ForeignKey('Customer', on_delete=models.CASCADE)
+
