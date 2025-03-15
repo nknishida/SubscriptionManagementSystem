@@ -481,9 +481,9 @@ class Reminder(models.Model):
         ('monthly', 'Monthly'),
     ]
 
-    subscription = models.ForeignKey('Subscription', on_delete=models.CASCADE, related_name='reminders', blank=True, null=True)
-    hardware = models.ForeignKey('Hardware', on_delete=models.CASCADE, related_name='reminders', blank=True, null=True)
-    customer = models.ForeignKey('Customer', on_delete=models.CASCADE, related_name='reminders', blank=True, null=True)
+    # subscription = models.ForeignKey('Subscription', on_delete=models.CASCADE, related_name='reminders', blank=True, null=True)
+    # hardware = models.ForeignKey('Hardware', on_delete=models.CASCADE, related_name='reminders', blank=True, null=True)
+    # customer = models.ForeignKey('Customer', on_delete=models.CASCADE, related_name='reminders', blank=True, null=True)
 
     reminder_type = models.CharField(max_length=50, choices=REMINDER_TYPE_CHOICES, default='renewal')
     reminder_days_before = models.IntegerField(default=7, help_text="Days before the due date to send a reminder.")

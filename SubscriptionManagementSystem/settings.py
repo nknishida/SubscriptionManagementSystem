@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
+import logging
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -33,6 +34,33 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'fallback-secret-key')
 DEBUG = True
 
 ALLOWED_HOSTS = ['*']
+# ALLOWED_HOSTS = ['192.168.251.92','192.168.251.108','127.0.0.1']
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'SubSync': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+}
+logger = logging.getLogger(__name__)
+# logger = logging.getLogger('SubSync')
+
+logger.info("Logging configuration loaded.")
+
 
 # Application definition
 
@@ -44,10 +72,13 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
-    'SubSync',
+    # 'SubSync',
     'corsheaders',
     'rest_framework_simplejwt',
     'django_filters',
+    'rest_framework_simplejwt.token_blacklist',
+    "django_celery_beat",
+    'SubSync.apps.SubsyncConfig',
 
 ]
 
@@ -112,24 +143,6 @@ WSGI_APPLICATION = 'SubscriptionManagementSystem.wsgi.application'
 
 # DATABASES = {
 #     'default': {
-#         'ENGINE': 'django.db.backends.sqlite3',
-#         'NAME': BASE_DIR / 'db.sqlite3',
-#     }
-# }
-
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.postgresql',
-#         'NAME': 'SUBSYNC',
-#         'USER': 'nishida',
-#         'PASSWORD': '123456789',
-#         'HOST': 'localhost',
-#         'PORT': '5432',
-#     }
-# }
-
-# DATABASES = {
-#     'default': {
 #         'ENGINE': 'django.db.backends.postgresql',
 #         'NAME': os.getenv('DB_NAME', 'SUBSYNC'),
 #         'USER': os.getenv('DB_USER', 'nishida'),
@@ -149,7 +162,6 @@ DATABASES = {
         'PORT': os.getenv('DB_PORT', '5432'),
     }
 }
-
 
 
 # Password validation
@@ -176,7 +188,8 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+# TIME_ZONE = 'UTC'
+TIME_ZONE =  'Asia/Kolkata'
 
 USE_I18N = True
 
@@ -201,6 +214,8 @@ SIMPLE_JWT = {
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'AUTH_HEADER_TYPES': ('Bearer',),  # Ensures Bearer token is used
+    "USER_ID_FIELD": "id",
+    "USER_ID_CLAIM": "user_id",
 }
 
 AUTHENTICATION_BACKENDS = [
@@ -221,3 +236,19 @@ EMAIL_USE_SSL=False
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+
+# from celery.schedules import crontab
+
+# CELERY_BEAT_SCHEDULE = {
+#     'send-reminder-emails': {
+#         'task': 'SubSync.tasks.send_reminder_email',
+#         'schedule': crontab(minute='*/1'),  # Run every minute for testing
+#         # 'args': (1,),  # Provide a valid reminder_id here
+#     },
+# }
+
+CELERY_BROKER_URL = 'redis://localhost:6379/0'
+CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+# CELERY_TIMEZONE = 'Asia/Karachi'

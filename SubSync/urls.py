@@ -1,6 +1,7 @@
 from django.urls import path
-from .views import ActiveSubscriptionsView, AddHardwareAPIView, DashboardOverview, ExpiredSubscriptionsView, HardwareSummaryView, ListHardwareView, LoginAPIView, ForgotPasswordAPIView, ProviderListView, ResetPasswordAPIView, CreateUserAPIView, RetrieveUpdateHardwareView, SubscriptionCategoryDistributionView, SubscriptionChoicesView, SubscriptionCountView, SubscriptionCreateView, ProviderCreateView,ChangePasswordView, SubscriptionListView, SubscriptionDetailView, SubscriptionMonthlyAnalysisView, UpcomingHardwareAPIView, UserProfileView, WarningSubscriptionsView, hardware_report, spending_report
+from .views import ActiveSubscriptionsView, AddHardwareAPIView, DashboardOverview, DashboardOverviewAll, ExpiredSubscriptionsView, HardwareSummaryView, ListHardwareView, LoginAPIView, ForgotPasswordAPIView, LogoutView, ProviderListView, ReminderAPIView, ResetPasswordAPIView, CreateUserAPIView, ResourceCreateView, ResourceNameListView, RetrieveUpdateHardwareView, SubscriptionCategoryDistributionView, SubscriptionChoicesView, SubscriptionCountView, SubscriptionCreateView, ProviderCreateView,ChangePasswordView, SubscriptionListView, SubscriptionDetailView, SubscriptionMonthlyAnalysisView, UpcomingHardwareAPIView, UserProfileView, WarningSubscriptionsView, hardware_report, spending_report
 from .views import SubscriptionDetailUpdateView, ExpenditureAnalysisView
+from rest_framework_simplejwt import views as jwt_views
 
 urlpatterns = [
     path('login/', LoginAPIView.as_view(), name='login'),
@@ -42,6 +43,17 @@ urlpatterns = [
     path("subscription_choices/", SubscriptionChoicesView.as_view(), name="subscription-choices"),
 
     path('hardware-report/', hardware_report, name='hardware-report'),
+    
+    path('logout/', LogoutView.as_view(), name='logout'),
 
+    path('reminders/', ReminderAPIView.as_view(), name='reminder-list'),
+    path('reminders/<int:pk>/', ReminderAPIView.as_view(), name='reminder-detail'),
+
+    path('resources/names/', ResourceNameListView.as_view(), name='resource-names'),
+    path('resources/add/', ResourceCreateView.as_view(), name='resource-add'),
+    
+    # path('token/', jwt_views.TokenObtainPairView.as_view(), name = 'token'),
+    path('token/refresh/', jwt_views.TokenRefreshView.as_view(), name='token_refresh'),
+    path('dashboard/', DashboardOverviewAll.as_view(), name='all'),
 
 ]

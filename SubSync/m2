@@ -314,16 +314,19 @@ class Servers(models.Model):
 class Hardware(models.Model):
 
     TYPE_CHOICES = [
-        ('Laptop', 'Laptop'),
-        ('Desktop', 'Desktop'),
-        ('Mobile Phone', 'Mobile Phone'),
-        ('Tablet', 'Tablet'),
-        ('Network Device', 'Network Device'),
-        ('Air Conditioner', 'Air Conditioner'),
-        ('Server', 'Server'),
-        ('Printer', 'Printer'),
-        ('Scanner', 'Scanner'),
-        ('Other', 'Other'),
+        ('laptop', 'Laptop'),
+        ('desktop', 'Desktop'),
+        ('server', 'Server'),
+        ('router', 'Router'),
+        ('switch', 'Switch'),
+        ('modem', 'Modem'),
+        ('firewall', 'Firewall'),
+        ('printer', 'Printer'),
+        ('scanner', 'Scanner'),
+        ('ups', 'UPS'),
+        ('cooling_unit', 'Cooling Unit'),
+        ('iot_device', 'IoT Device'),
+        ('other', 'Other'),
     ]
 
     STATUS_CHOICES = [
@@ -332,14 +335,21 @@ class Hardware(models.Model):
         ('maintenance', 'Maintenance')
     ]
 
-    # hardware_name = models.CharField(max_length=100)
+    hardware_name = models.CharField(max_length=100)
     hardware_type = models.CharField(max_length=50, choices=TYPE_CHOICES)
     manufacturer = models.CharField(max_length=255)
     model_number = models.CharField(max_length=255)
     serial_number = models.CharField(max_length=100, unique=True)
     assigned_department = models.CharField(max_length=255)
     status = models.CharField(max_length=50, choices=STATUS_CHOICES)
-    notes = models.TextField(blank=True, null=True)
+
+    # purchase_date = models.DateField()
+    # purchase_cost = models.DecimalField(max_digits=10, decimal_places=2)
+    # supplier = models.CharField(max_length=255)
+    # supplier_contact = models.CharField(max_length=20, blank=True, null=True)
+    # purchase_type = models.CharField(max_length=100)
+    # last_service_date = models.DateField(blank=True, null=True)
+    # next_service_date = models.DateField(blank=True, null=True)
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -355,115 +365,70 @@ class Hardware(models.Model):
         db_table = 'hardware'
 
 class Warranty(models.Model):
-    EXTENDED_WARRANTY_PERIODS = [
-        (1, '1 Year'),
-        (2, '2 Years'),
-        (3, '3 Years'),
-        (5, '5 Years'),
-    ]
-
-    hardware = models.OneToOneField(Hardware, on_delete=models.CASCADE, related_name='warranty')
+    hardware = models.OneToOneField(Hardware, on_delete=models.CASCADE, related_name="warranty")
+    warranty_provider = models.CharField(max_length=100)
+    warranty_period = models.IntegerField(help_text="Warranty period in months")
     warranty_expiry_date = models.DateField()
     is_extended_warranty = models.BooleanField(default=False)
-    extended_warranty_period = models.IntegerField(choices=EXTENDED_WARRANTY_PERIODS, null=True, blank=True)
+    extended_period = models.IntegerField(blank=True, null=True, help_text="Extended warranty period in months")
 
     def __str__(self):
-        return f"Warranty for {self.hardware} expires on {self.warranty_expiry_date}"
+        return f"{self.hardware.hardware_name} - Warranty Expires: {self.warranty_expiry_date}"
+
+    class Meta:
+        db_table = 'warranty'
 
 class Purchase(models.Model):
-    hardware = models.OneToOneField(Hardware, on_delete=models.CASCADE, related_name='purchase')
+    hardware = models.OneToOneField(Hardware, on_delete=models.CASCADE, related_name="purchase")
     purchase_date = models.DateField()
-    purchase_cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    purchase_cost = models.DecimalField(max_digits=10, decimal_places=2)
+    purchase_type = models.CharField(max_length=50)
+    supplier_name = models.CharField(max_length=255)
+    supplier_contact = models.CharField(max_length=20, blank=True, null=True)
 
     def __str__(self):
-        return f"Purchase for {self.hardware} on {self.purchase_date}"
+        return f"{self.hardware.hardware_name} - {self.purchase_cost}"
+
+    class Meta:
+        db_table = 'purchase'
 
 class HardwareService(models.Model):
-    hardware = models.ForeignKey(Hardware, on_delete=models.CASCADE, related_name='services')
-    last_service_date = models.DateField(null=True, blank=True)
-    next_service_date = models.DateField(null=True, blank=True)
-    free_service_until = models.DateField(null=True, blank=True)
-    service_cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    service_provider = models.CharField(max_length=100, null=True, blank=True)
-    service_notes = models.TextField(null=True, blank=True)
-
-    def __str__(self):
-        return f"Service for {self.hardware} on {self.last_service_date}"
-
-class Computer(models.Model):
-    COMPUTER_TYPES = [
-        ('Laptop', 'Laptop'),
-        ('Desktop', 'Desktop'),
-    ]
-
-    hardware = models.OneToOneField(Hardware, on_delete=models.CASCADE, related_name='computer')
-    computer_type = models.CharField(max_length=50, choices=COMPUTER_TYPES)
-    cpu = models.CharField(max_length=100)
-    ram = models.CharField(max_length=100)
-    storage = models.CharField(max_length=100)
-
-    def __str__(self):
-        return f"{self.computer_type}: {self.hardware}"
     
-class PortableDevice(models.Model):
-    PORTABLE_DEVICE_TYPES = [
-        ('Mobile Phone', 'Mobile Phone'),
-        ('Tablet', 'Tablet'),
-    ]
+    # STATUS_CHOICES = [
+    #     ('active', 'Active'),
+    #     ('completed', 'Completed'),
+    #     ('pending', 'Pending'),
+    #     ('cancelled', 'Cancelled')
+    # ]
 
-    hardware = models.OneToOneField(Hardware, on_delete=models.CASCADE, related_name='portable_device')
-    device_type = models.CharField(max_length=50, choices=PORTABLE_DEVICE_TYPES)
-    os_version = models.CharField(max_length=100)
-    storage = models.CharField(max_length=100)
-    imei_number = models.CharField(max_length=100, null=True, blank=True)  # Only for Mobile Phone
+    hardware = models.OneToOneField(Hardware, on_delete=models.CASCADE, related_name="service")
+    service_provider = models.CharField(max_length=100)
+    service_provider_contact = models.CharField(max_length=100)
+    last_service_date = models.DateField(blank=True, null=True)
+    service_cost = models.DecimalField(max_digits=10, decimal_places=2)
+    no_of_services_done = models.IntegerField(default=0)
+    no_of_free_services = models.IntegerField(default=0)
+    free_services_used = models.IntegerField(default=0)
+    service_period = models.IntegerField(help_text="Service interval in days", default=180)
+
+    @property
+    def next_service_date(self):
+        if self.last_service_date and self.service_period:
+            return self.last_service_date + timedelta(days=self.service_period)
+        return None  
+
+    def is_free_service_exhausted(self):
+        return self.free_services_used >= self.no_of_free_services
 
     def __str__(self):
-        return f"{self.device_type}: {self.hardware}"
-
-class NetworkDevice(models.Model):
-    hardware = models.OneToOneField(Hardware, on_delete=models.CASCADE, related_name='network_device')
-    throughput = models.CharField(max_length=100)
-    ip_address = models.CharField(max_length=100)
-
-    def __str__(self):
-        return f"Network Device: {self.hardware}"
+        return f"Service for {self.hardware.hardware_name} - Next: {self.next_service_date}"
     
-class AirConditioner(models.Model):
-    hardware = models.OneToOneField(Hardware, on_delete=models.CASCADE, related_name='air_conditioner')
-    btu_rating = models.CharField(max_length=100)
-    energy_rating = models.CharField(max_length=100)
-
     def __str__(self):
-        return f"Air Conditioner: {self.hardware}"
-    
-class HardwareServers(models.Model):
-    hardware = models.OneToOneField(Hardware, on_delete=models.CASCADE, related_name='server')
-    cpu = models.CharField(max_length=100)
-    ram = models.CharField(max_length=100)
-    storage_configuration = models.CharField(max_length=100)
-    operating_system = models.CharField(max_length=100)
+        status = "Exhausted" if self.is_free_service_exhausted() else "Available"
+        return f"Free Service for {self.hardware.hardware_name} ({status})"
 
-    def __str__(self):
-        return f"Server: {self.hardware}"
-    
-class Printer(models.Model):
-    hardware = models.OneToOneField(Hardware, on_delete=models.CASCADE, related_name='printer')
-    print_technology = models.CharField(max_length=100)
-    print_speed = models.CharField(max_length=100)
-    connectivity = models.CharField(max_length=100)
-
-    def __str__(self):
-        return f"Printer: {self.hardware}"
-    
-class Scanner(models.Model):
-    hardware = models.OneToOneField(Hardware, on_delete=models.CASCADE, related_name='scanner')
-    scan_resolution = models.CharField(max_length=100)
-    scan_type = models.CharField(max_length=100)
-    connectivity = models.CharField(max_length=100)
-
-    def __str__(self):
-        return f"Scanner: {self.hardware}"
-    
+    class Meta:
+        db_table = 'hardware_service'
 
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
