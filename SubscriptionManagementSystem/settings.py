@@ -77,7 +77,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'django_filters',
     'rest_framework_simplejwt.token_blacklist',
-    "django_celery_beat",
+    # "django_celery_beat",
     'SubSync.apps.SubsyncConfig',
 
 ]
@@ -252,3 +252,6 @@ CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 # CELERY_TIMEZONE = 'Asia/Karachi'
+
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'Asia/Kolkata'  # Match Django's TIME_ZONE

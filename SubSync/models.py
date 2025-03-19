@@ -12,6 +12,7 @@ class User(AbstractUser):
     username = models.CharField(max_length=150, unique=True)
 
     profile_picture = models.ImageField(upload_to='profile_pics/', null=True, blank=True)
+    # phone_numbers = models.TextField(blank=True, help_text="Comma-separated list of phone numbers for SMS")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -32,27 +33,10 @@ class Provider(models.Model):
         return self.provider_name
 
 class Subscription(models.Model):
-    # CATEGORY_CHOICES = [
-    #     ('software', 'Software'),
-    #     ('billing', 'Billing'),
-    #     ('server', 'Server'),
-    #     ('domain', 'Domain'),
-    # ]
-    # PAYMENT_STATUS_CHOICES = [
-    #     ('paid', 'Paid'),
-    #     ('pending', 'Pending'),
-    #     ('unpaid', 'Unpaid'),
-    # ]
-    # STATUS_CHOICES = [
-    #     ('active', 'Active'),
-    #     ('expired', 'Expired'),
-    #     ('canceled', 'Canceled'),
-    # ]
 
     CATEGORY_CHOICES = ['Software', 'Billing', 'Server', 'Domain']
-    PAYMENT_STATUS_CHOICES = ['Paid', 'Pending', 'Unpaid']
+    PAYMENT_STATUS_CHOICES = ['Paid',  'Unpaid']
     STATUS_CHOICES = ['Active', 'Expired', 'Canceled']
-    # subscription_category = models.CharField(max_length=50, choices=CATEGORY_CHOICES)
     subscription_category = models.CharField(
         max_length=50, choices=[(c, c) for c in CATEGORY_CHOICES]
     )
@@ -65,44 +49,17 @@ class Subscription(models.Model):
     
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='subscriber')
     provider = models.ForeignKey(Provider, on_delete=models.CASCADE, related_name='subscription_provider')
-    # subscription_id =models.IntegerField()
     start_date = models.DateField()
     end_date = models.DateField()
-    billing_cycle = models.CharField(
-        max_length=20, 
-    #     choices = [
-    #     ('weekly', 'Weekly'),
-    #     ('monthly', 'Monthly'),
-    #     ('quarterly', 'Quarterly'),
-    #     ('semi-annual', 'Semi-Annual'),
-    #     ('annual', 'Annual'),
-    #     ('biennial', 'Biennial'),
-    #     ('triennial', 'Triennial'),
-    #     ('one-time', 'One-Time'),
-    # ],
-        default='monthly'
-    )
-    # renewal_date = models.DateField()
+    billing_cycle = models.CharField(max_length=20)
     cost = models.DecimalField(max_digits=10, decimal_places=2)
-    # payment_status = models.CharField(max_length=50, choices=PAYMENT_STATUS_CHOICES)
-    payment_method = models.CharField(
-        max_length=50, 
-        # choices=[
-        #     ('credit_card', 'Credit Card'),
-        #     ('debit_card', 'Debit Card'),
-        #     ('paypal', 'PayPal'),
-        #     ('bank_transfer', 'Bank Transfer'),
-        #     ('other', 'Other')
-        # ]
-    )
-    last_payment_date = models.DateField(null=True, blank=True)
+    payment_method = models.CharField(max_length=50)
+    # last_payment_date = models.DateField(null=True, blank=True)
     next_payment_date = models.DateField(null=True, blank=True)
-    # status = models.CharField(max_length=50, choices=STATUS_CHOICES)
     auto_renewal = models.BooleanField(default=False)  # Checkbox for auto-renewal
-    # discount_coupon = models.CharField(max_length=100, null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_subscriptions')
+    # created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_subscriptions')
     
     updated_at = models.DateTimeField(auto_now=True)
     updated_by= models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_subscriptions')
@@ -125,7 +82,32 @@ class Subscription(models.Model):
     def clean(self):
         if self.end_date and self.start_date and self.end_date < self.start_date:
             raise ValidationError("End date cannot be earlier than the start date.")
-      
+        
+    def update_status(self):
+        """Update the subscription status based on !end date//next_payement_date and auto-renewal."""
+        today = now().date()
+        
+        if self.is_deleted:
+            self.status = "Canceled"
+        elif self.next_payment_date and today > self.next_payment_date:
+            if self.auto_renewal:
+                # Auto-renewal is on; extend the end_date
+                # self.next_payment_date += relativedelta(months=1)  # Example for monthly renewal
+                self.status = "Active"
+            else:
+                self.status = "Expired"
+        else:
+            self.status = "Active"
+
+    def update_payment_status(self):
+        """Update payment status based on next payment date."""
+        today = now().date()
+        
+        if self.next_payment_date and today > self.next_payment_date:
+            self.payment_status = "Unpaid"
+        else:
+            self.payment_status = "Paid"  # You may need payment confirmation logic here
+
     def calculate_next_payment_date(self):
         """Calculate the next payment date based on !start_date //last_payment_date and billing_cycle."""
         if not self.start_date:
@@ -156,7 +138,9 @@ class Subscription(models.Model):
         return self.next_payment_date
 
     def save(self, *args, **kwargs):
-        """Override save method to calculate next_payment_date before saving."""
+        """Override save method to update status , payment status,and next payment date before saving."""
+        self.update_status()
+        self.update_payment_status()
         if not self.next_payment_date:
             self.next_payment_date = self.calculate_next_payment_date()
         super().save(*args, **kwargs)
@@ -164,7 +148,6 @@ class Subscription(models.Model):
     def __str__(self):
         return f"{self.subscription_category} - {self.billing_cycle}"
 
-    
 class SoftwareSubscriptions(models.Model):
     subscription = models.OneToOneField(Subscription, on_delete=models.CASCADE, related_name='software_detail', unique=True)
 
@@ -172,94 +155,25 @@ class SoftwareSubscriptions(models.Model):
     software_name = models.CharField(max_length=255)
     version = models.CharField(max_length=50, blank=True, null=True)
     # features = models.TextField(blank=True, null=True)
-    # license_key = models.CharField(max_length=255)
     no_of_users = models.PositiveIntegerField(default=1)  # Ensures no negative users
 
     def __str__(self):
         return f"Software Details for {self.subscription.id}"
     
-# BILLING_TYPE_CHOICES = [
-#     ('Prepaid', 'Prepaid'),
-#     ('Postpaid', 'Postpaid'),
-# ]
-
-# UTILITY_TYPE_CHOICES = {
-#     'Prepaid': [('Internet', 'Internet'), ('Mobile', 'Mobile')],
-#     'Postpaid': [('Electricity', 'Electricity'), ('Water', 'Water')],
-# }
-
-# def get_utility_type_choices():
-#         return Utilities.UTILITY_TYPE_CHOICES.get('Prepaid', []) + Utilities.UTILITY_TYPE_CHOICES.get('Postpaid', [])
-
-# class Utilities(models.Model):
-#     subscription = models.OneToOneField(Subscription, on_delete=models.CASCADE, related_name='billing', unique=True)
-
-#     # BILLING_TYPE_CHOICES = [
-#     #     ('Prepaid', 'Prepaid'),
-#     #     ('Postpaid', 'Postpaid'),
-#     # ]
-
-#     # UTILITY_TYPE_CHOICES = {
-#     #     'Prepaid': [('Internet', 'Internet'), ('Mobile', 'Mobile')],
-#     #     'Postpaid': [('Electricity', 'Electricity'), ('Water', 'Water')],
-#     # }
-
-#     billing_type = models.CharField(max_length=50, choices=BILLING_TYPE_CHOICES)
-
-#     utility_type = models.CharField(
-#     max_length=50,
-#     choices=get_utility_type_choices()  # Dynamically fetch choices
-#     )
-
-#     # utility_type = models.CharField(max_length=50)
-#     location = models.CharField(max_length=50)
-#     account_number = models.CharField(max_length=50, unique=True)  # Ensuring unique accounts
-
-#     def clean(self):
-#         """ Ensure subcategory matches the billing type. """
-#         valid_choices = dict(self.UTILITY_TYPE_CHOICES).get(self.billing_type, [])
-#         if self.utility_type not in [choice[0] for choice in valid_choices]:
-#             raise ValidationError(f"Invalid utility type '{self.utility_type}' for billing type '{self.billing_type}'.")
-
-#     def __str__(self):
-#         return f"Billing for {self.subscription.subscription_category} - {self.billing_type} ({self.utility_type})"
-
 from django.db import models
 from django.core.exceptions import ValidationError
-
-UTILITY_TYPE_CHOICES = [
-    ('Prepaid', 'Prepaid'),
-    ('Postpaid', 'Postpaid'),
-]
-
-# BILLING_TYPE_CHOICES= {
-#     'Prepaid': [('Internet', 'Internet'), ('Mobile', 'Mobile')],
-#     'Postpaid': [('Electricity', 'Electricity'), ('Water', 'Water')],
-# }
-
-# def get_utility_type_choices():
-#     """Fetch choices dynamically from UTILITY_TYPE_CHOICES."""
-#     return UTILITY_TYPE_CHOICES.get('Prepaid', []) + UTILITY_TYPE_CHOICES.get('Postpaid', [])
 
 class Utilities(models.Model):
     subscription = models.OneToOneField('Subscription', on_delete=models.CASCADE, related_name='billing', unique=True)
 
+    UTILITY_TYPE_CHOICES = [
+    ('Prepaid', 'Prepaid'),
+    ('Postpaid', 'Postpaid'),
+    ]
     consumer_no =models.IntegerField()
     utility_name= models.CharField(max_length=255)
     utility_type = models.CharField(max_length=50, choices=UTILITY_TYPE_CHOICES)
-    # billing_type = models.CharField(max_length=50, choices=get_utility_type_choices())  # Use function to set choices
-    # location = models.CharField(max_length=50)
-    # account_number = models.CharField(max_length=50, unique=True)
-
-    # def clean(self):
-    #     """ Ensure utility_type matches the selected billing_type. """
-    #     valid_choices = UTILITY_TYPE_CHOICES.get(self.billing_type, [])
-    #     if self.utility_type not in [choice[0] for choice in valid_choices]:
-    #         raise ValidationError(f"Invalid utility type '{self.utility_type}' for billing type '{self.billing_type}'.")
-
-    # def __str__(self):
-    #     return f"Billing for {self.subscription.subscription_category} - {self.billing_type} ({self.utility_type})"
-
+    
 class Domain(models.Model):
     DOMAIN_TYPE_CHOICES = [
         ('.com', '.com'),
@@ -293,7 +207,6 @@ class Domain(models.Model):
 
     def __str__(self):
         return self.domain_name
-
 
 class Servers(models.Model):
     SERVER_TYPE_CHOICES = [
@@ -490,8 +403,9 @@ class Reminder(models.Model):
     NOTIFICATION_METHOD_CHOICES = [
         ('email', 'Email'),
         ('sms', 'SMS'),
-        ('in-app', 'In-App'),
-        ('all', 'All'),
+        # ('in-app', 'In-App'),
+        # ('all', 'All'),
+        ('both', 'Both'),
     ]
     SUBSCRIPTION_CYCLE_CHOICES = [
         ('weekly', 'Weekly'),
@@ -533,6 +447,7 @@ class Reminder(models.Model):
     recipients = models.TextField(
         blank=True, null=True, help_text="Comma-separated email addresses."
     )
+    # phone_numbers = models.TextField(blank=True, help_text="Comma-separated list of phone numbers for SMS")
     custom_message = models.TextField(
         blank=True, null=True, help_text="Custom message for the reminder."
     )
@@ -594,7 +509,15 @@ class Reminder(models.Model):
                     reminder_dates.append(optional_reminder_date)
                 current_date += timedelta(days=1)
 
-        logger.info(f"Generated Reminder Dates: {reminder_dates}")
+        # Overdue reminder logic (continue reminders if unpaid/expired)
+        if subscription.status == "Expired" or subscription.payment_status == "Unpaid":
+            overdue_reminder_date = subscription.next_payment_date + timedelta(days=1)
+            while overdue_reminder_date <= today:  # Keep generating overdue reminders
+                reminder_dates.append(overdue_reminder_date)
+                overdue_reminder_date += timedelta(days=3)  # Overdue reminders every 3 days (adjustable)
+
+
+        logger.info(f"Generated Reminder Dates(in models.py): {reminder_dates}")
         return reminder_dates
 
     def __str__(self):
@@ -696,3 +619,13 @@ class CustomerResource(models.Model):
     usage_start_date = models.DateTimeField(help_text="Start date of resource usage.")
     usage_end_date = models.DateTimeField(help_text="End date of resource usage.")
     payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, default='pending')
+
+
+class Notification(models.Model):
+    subscription = models.ForeignKey("SubSync.Subscription", on_delete=models.CASCADE, related_name="notifications")
+    message = models.TextField()
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(default=now)
+
+    def __str__(self):
+        return f"Notification for {self.subscription} - {self.message[:20]}"

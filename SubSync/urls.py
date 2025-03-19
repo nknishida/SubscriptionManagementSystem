@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import ActiveSubscriptionsView, AddHardwareAPIView, DashboardOverview, DashboardOverviewAll, ExpiredSubscriptionsView, HardwareSummaryView, ListHardwareView, LoginAPIView, ForgotPasswordAPIView, LogoutView, ProviderListView, ReminderAPIView, ResetPasswordAPIView, CreateUserAPIView, ResourceCreateView, ResourceNameListView, RetrieveUpdateHardwareView, SubscriptionCategoryDistributionView, SubscriptionChoicesView, SubscriptionCountView, SubscriptionCreateView, ProviderCreateView,ChangePasswordView, SubscriptionListView, SubscriptionDetailView, SubscriptionMonthlyAnalysisView, UpcomingHardwareAPIView, UserProfileView, WarningSubscriptionsView, hardware_report, spending_report
+from .views import ActiveSubscriptionsView, AddHardwareAPIView, DashboardOverview, DashboardOverviewAll, ExpiredSubscriptionsView, HardwareSummaryView, ListHardwareView, LoginAPIView, ForgotPasswordAPIView, LogoutView, MarkNotificationAsReadView, NotificationListView, ProviderListView, ReminderAPIView, ResetPasswordAPIView, CreateUserAPIView, ResourceCreateView, ResourceNameListView, RetrieveUpdateHardwareView, SubscriptionCategoryDistributionView, SubscriptionChoicesView, SubscriptionCountView, SubscriptionCreateView, ProviderCreateView,ChangePasswordView, SubscriptionListView, SubscriptionDetailView, SubscriptionMonthlyAnalysisView, UpcomingHardwareAPIView, UserProfileView, WarningSubscriptionsView, hardware_report, spending_report
 from .views import SubscriptionDetailUpdateView, ExpenditureAnalysisView
 from rest_framework_simplejwt import views as jwt_views
 
@@ -55,5 +55,8 @@ urlpatterns = [
     # path('token/', jwt_views.TokenObtainPairView.as_view(), name = 'token'),
     path('token/refresh/', jwt_views.TokenRefreshView.as_view(), name='token_refresh'),
     path('dashboard/', DashboardOverviewAll.as_view(), name='all'),
+
+    path("notifications/", NotificationListView.as_view(), name="notification-list"),
+    path("notifications/<int:pk>/", MarkNotificationAsReadView.as_view(), name="mark-notification-read"),
 
 ]

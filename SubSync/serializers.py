@@ -1,7 +1,7 @@
 from rest_framework import serializers
 # from django.contrib.auth import get_user_model
 # User = get_user_model()
-from .models import HardwareService, Provider, Purchase, Resource, Subscription, User, SoftwareSubscriptions, Utilities, Domain, Servers, Hardware, Warranty
+from .models import AirConditioner, Computer, HardwareServers, HardwareService, NetworkDevice, Notification, PortableDevice, Printer, Provider, Purchase, Resource, Scanner, Subscription, User, SoftwareSubscriptions, Utilities, Domain, Servers, Hardware, Warranty
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -101,7 +101,6 @@ class SubscriptionSerializer(serializers.ModelSerializer):
 #             "utility_name",
 #         ]
 
-    
 class SoftwareSubscriptionSerializer(serializers.ModelSerializer):
     class Meta:
         model = SoftwareSubscriptions
@@ -307,8 +306,6 @@ class SubscriptionWarningSerializer(serializers.ModelSerializer):
         
         return data
 
-
-
 class WarrantySerializer(serializers.ModelSerializer):
     class Meta:
         model = Warranty
@@ -324,73 +321,164 @@ class HardwareServiceSerializer(serializers.ModelSerializer):
         model = HardwareService
         exclude = ['hardware']
 
+class ComputerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Computer
+        fields = '__all__'
+
+class PortableDeviceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PortableDevice
+        fields = '__all__'
+
+class NetworkDeviceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = NetworkDevice
+        fields = '__all__'
+
+class AirConditionerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AirConditioner
+        fields = '__all__'
+
+class ServerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = HardwareServers
+        fields = '__all__'
+
+class PrinterSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Printer
+        fields = '__all__'
+
+class ScannerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Scanner
+        fields = '__all__'
+
 class HardwareSerializer(serializers.ModelSerializer):
-    warranty = WarrantySerializer(required=False)
     purchase = PurchaseSerializer(required=False)
-    service = HardwareServiceSerializer(required=False)
+    warranty = WarrantySerializer(required=False)
+    services = HardwareServiceSerializer(many=True, required=False)
+    computer = ComputerSerializer(required=False)
+    portable_device = PortableDeviceSerializer(required=False)
+    network_device = NetworkDeviceSerializer(required=False)
+    air_conditioner = AirConditionerSerializer(required=False)
+    server = ServerSerializer(required=False)
+    printer = PrinterSerializer(required=False)
+    scanner = ScannerSerializer(required=False)
 
     class Meta:
         model = Hardware
         fields = '__all__'
-        extra_kwargs = {'user': {'read_only': True}}
 
     def create(self, validated_data):
-        """Create Hardware first, then assign its ID to related models"""
-
-        user = validated_data.pop('user', None)
-        if user is None:
-            raise serializers.ValidationError({"user": "User is required."})
-
-        # user = request.user if request else None
-
-        # if not user or not user.is_authenticated:
-        #     raise serializers.ValidationError({"user": ["Authentication required."]})
-
         # Extract nested data
-        warranty_data = validated_data.pop('warranty', None)
         purchase_data = validated_data.pop('purchase', None)
-        service_data = validated_data.pop('service', None)
+        warranty_data = validated_data.pop('warranty', None)
+        services_data = validated_data.pop('services', [])
+        computer_data = validated_data.pop('computer', None)
+        portable_device_data = validated_data.pop('portable_device', None)
+        network_device_data = validated_data.pop('network_device', None)
+        air_conditioner_data = validated_data.pop('air_conditioner', None)
+        server_data = validated_data.pop('server', None)
+        printer_data = validated_data.pop('printer', None)
+        scanner_data = validated_data.pop('scanner', None)
 
-        # Ensure unique serial number
-        if Hardware.objects.filter(serial_number=validated_data.get('serial_number')).exists():
-            raise serializers.ValidationError({"serial_number": ["A hardware with this serial number already exists."]})
+        # Create Hardware instance
+        hardware = Hardware.objects.create(**validated_data)
 
-        # Create Hardware
-        hardware = Hardware.objects.create(user=user,**validated_data)
-
-        # Assign Foreign Key hardware to related tables
-        if warranty_data:
-            Warranty.objects.create(hardware=hardware, **warranty_data)
+        # Create related instances
         if purchase_data:
             Purchase.objects.create(hardware=hardware, **purchase_data)
-        if service_data:
+        if warranty_data:
+            Warranty.objects.create(hardware=hardware, **warranty_data)
+        for service_data in services_data:
             HardwareService.objects.create(hardware=hardware, **service_data)
+        if computer_data:
+            Computer.objects.create(hardware=hardware, **computer_data)
+        if portable_device_data:
+            PortableDevice.objects.create(hardware=hardware, **portable_device_data)
+        if network_device_data:
+            NetworkDevice.objects.create(hardware=hardware, **network_device_data)
+        if air_conditioner_data:
+            AirConditioner.objects.create(hardware=hardware, **air_conditioner_data)
+        if server_data:
+            HardwareServers.objects.create(hardware=hardware, **server_data)
+        if printer_data:
+            Printer.objects.create(hardware=hardware, **printer_data)
+        if scanner_data:
+            Scanner.objects.create(hardware=hardware, **scanner_data)
 
         return hardware
     
-    def update(self, instance, validated_data):
-        # Update Hardware fields
-        warranty_data = validated_data.pop('warranty', None)
-        purchase_data = validated_data.pop('purchase', None)
-        service_data = validated_data.pop('service', None)
+# class HardwareSerializer(serializers.ModelSerializer):
+#     warranty = WarrantySerializer(required=False)
+#     purchase = PurchaseSerializer(required=False)
+#     service = HardwareServiceSerializer(required=False)
 
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        instance.save()
+#     class Meta:
+#         model = Hardware
+#         fields = '__all__'
+#         extra_kwargs = {'user': {'read_only': True}}
 
-        # Handle Warranty Update
-        if warranty_data:
-            warranty, _ = Warranty.objects.update_or_create(hardware=instance, defaults=warranty_data)
+#     def create(self, validated_data):
+#         """Create Hardware first, then assign its ID to related models"""
 
-        # Handle Purchase Update
-        if purchase_data:
-            purchase, _ = Purchase.objects.update_or_create(hardware=instance, defaults=purchase_data)
+#         user = validated_data.pop('user', None)
+#         if user is None:
+#             raise serializers.ValidationError({"user": "User is required."})
 
-        # Handle Service Update
-        if service_data:
-            service, _ = HardwareService.objects.update_or_create(hardware=instance, defaults=service_data)
+#         # user = request.user if request else None
 
-        return instance
+#         # if not user or not user.is_authenticated:
+#         #     raise serializers.ValidationError({"user": ["Authentication required."]})
+
+#         # Extract nested data
+#         warranty_data = validated_data.pop('warranty', None)
+#         purchase_data = validated_data.pop('purchase', None)
+#         service_data = validated_data.pop('service', None)
+
+#         # Ensure unique serial number
+#         if Hardware.objects.filter(serial_number=validated_data.get('serial_number')).exists():
+#             raise serializers.ValidationError({"serial_number": ["A hardware with this serial number already exists."]})
+
+#         # Create Hardware
+#         hardware = Hardware.objects.create(user=user,**validated_data)
+
+#         # Assign Foreign Key hardware to related tables
+#         if warranty_data:
+#             Warranty.objects.create(hardware=hardware, **warranty_data)
+#         if purchase_data:
+#             Purchase.objects.create(hardware=hardware, **purchase_data)
+#         if service_data:
+#             HardwareService.objects.create(hardware=hardware, **service_data)
+
+#         return hardware
+    
+#     def update(self, instance, validated_data):
+#         # Update Hardware fields
+#         warranty_data = validated_data.pop('warranty', None)
+#         purchase_data = validated_data.pop('purchase', None)
+#         service_data = validated_data.pop('service', None)
+
+#         for attr, value in validated_data.items():
+#             setattr(instance, attr, value)
+#         instance.save()
+
+#         # Handle Warranty Update
+#         if warranty_data:
+#             warranty, _ = Warranty.objects.update_or_create(hardware=instance, defaults=warranty_data)
+
+#         # Handle Purchase Update
+#         if purchase_data:
+#             purchase, _ = Purchase.objects.update_or_create(hardware=instance, defaults=purchase_data)
+
+#         # Handle Service Update
+#         if service_data:
+#             service, _ = HardwareService.objects.update_or_create(hardware=instance, defaults=service_data)
+
+#         return instance
     
 from rest_framework import serializers
 from .models import Reminder
@@ -431,3 +519,8 @@ class ResourceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Resource
         fields = '__all__' 
+
+class NotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Notification
+        fields = ["id", "subscription", "message", "is_read", "created_at"]

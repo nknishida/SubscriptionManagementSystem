@@ -1,24 +1,3 @@
-# from django.db.models.signals import post_save
-# from django.dispatch import receiver
-# from .models import Subscription, Reminder, ReminderSubscription
-# from datetime import timedelta
-
-# @receiver(post_save, sender=Subscription)
-# def create_subscription_reminder(sender, instance, created, **kwargs):
-#     """Automatically create a reminder when a subscription is created."""
-#     if created:
-#         print(f"Creating reminder for subscription: {instance.name}")  # Debugging
-#         reminder_date = instance.renewal_date - timedelta(days=7)
-#         reminder = Reminder.objects.create(
-#             reminder_type='renewal',
-#             reminder_days_before=7,
-#             reminder_date=reminder_date,
-#             notification_method='email',
-#             sent_to=instance.reminder_email,
-#             custom_message=f"Reminder: Your subscription for {instance.name} is due for renewal.",
-#         )
-#         ReminderSubscription.objects.create(reminder=reminder, subscription=instance)
-
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from .models import Reminder

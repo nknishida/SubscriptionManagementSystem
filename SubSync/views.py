@@ -448,49 +448,6 @@ from django.core.exceptions import ValidationError
 from rest_framework.filters import OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
-
-# class SubscriptionCreateView(generics.CreateAPIView):
-#     queryset = Subscription.objects.all()
-#     serializer_class = SubscriptionSerializer
-#     permission_classes = [AllowAny]  # Ensure any user can add subscriptions
-#     # permission_classes = [permissions.IsAuthenticated]  # Ensure only authenticated users can add subscriptions
-
-#     def create(self, request, *args, **kwargs):
-#         provider_id = request.data.get('provider')
-#         try:
-#             provider = Provider.objects.get(id=provider_id)
-#         except Provider.DoesNotExist:
-#             return Response({"error": "Provider not found"}, status=status.HTTP_400_BAD_REQUEST)
-        
-#         serializer = self.get_serializer(data=request.data)
-#         if serializer.is_valid():
-#             subscription = serializer.save()
-#             # serializer.save(user=request.user)  # Assign logged-in user to Subscription
-
-#             # Get additional fields
-#             category = subscription.subscription_category
-#             additional_data = request.data.get('additional_fields', {})
-
-#             # Create category-specific record
-#             if category == "software":
-#                 SoftwareSubscriptions.objects.create(subscription=subscription, **additional_data)
-#             elif category == "billing":
-#                 # Utilities.objects.create(subscription=subscription, **additional_data)
-#                 utility_instance = Utilities(subscription=subscription, **additional_data)
-#                 try:
-#                     utility_instance.clean()  # Manually trigger validation
-#                     utility_instance.save()
-#                 except ValidationError as e:
-#                     return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-#             elif category == "domain":
-#                 Domain.objects.create(subscription=subscription, **additional_data)
-#             elif category == "server":
-#                 Servers.objects.create(subscription=subscription, **additional_data)
-
-#             return Response(serializer.data, status=status.HTTP_201_CREATED)
-        
-#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 from .models import ReminderSubscription
 
 class SubscriptionCreateView(generics.CreateAPIView):
@@ -515,7 +472,7 @@ class SubscriptionCreateView(generics.CreateAPIView):
             "endDate": "end_date",
             "paymentMethod": "payment_method",
             "notificationMethod":"notification_method",
-            "nextPaymentDate":"next_payment_date",
+            # "nextPaymentDate":"next_payment_date",
             "customMessage":"custom_message",
             "billingCycle":"subscription_cycle",
             
@@ -531,9 +488,6 @@ class SubscriptionCreateView(generics.CreateAPIView):
             # "userId": "user"  # Ensure user ID is included
         }
 
-        # for frontend_key, backend_key in field_mapping.items():
-        #     if frontend_key in data:
-        #         data[backend_key] = data.pop(frontend_key)
         for frontend_key, backend_key in field_mapping.items():
             if frontend_key in data:
                 value = data.pop(frontend_key)
@@ -553,27 +507,9 @@ class SubscriptionCreateView(generics.CreateAPIView):
         data["reminder_status"] = "pending"
         # ✅ Assign 'user' field (assuming user is the logged-in user)
         data["user"] = request.user.id
-        data["created_by"] = request.user.id
+        # data["created_by"] = request.user.id
         print("Final Data Before Saving:", data)
         print("\n***********************************************************************************************************************************")
-
-        # # Extract provider-related fields
-        # provider_fields = ["provider_name", "contact_email", "contact_phone", "website"]
-        # provider_data = {key: data.pop(key) for key in provider_fields if key in data}
-        # print("provider_data:",provider_data)
-        # print("\n**********************************************************************************************************************************")
-        # # Check if provider exists, otherwise create a new one
-        # contact_email = provider_data.get("contact_email")
-        # print("provider_email:",contact_email)
-        # print("\n**********************************************************************************************************************************")
-        # if not contact_email :
-        #     return Response({"error": "Provider email is required."}, status=status.HTTP_400_BAD_REQUEST)
-        # provider, created = Provider.objects.update_or_create(
-        #     contact_email=contact_email,
-        #     defaults={**provider_data, "contact_email": contact_email}  # Ensure email is included
-        # )
-        # # Assign provider to subscription data
-        # data["provider"] = provider.id
 
         provider_id = data.get("providerid")  # Get provider ID from request
         print("🔍 Selected Provider ID:", provider_id)
@@ -600,6 +536,22 @@ class SubscriptionCreateView(generics.CreateAPIView):
             "notification_method", "recipients", "custom_message", "optional_days_before"
         ]
         reminder_data = {key: data.pop(key) for key in reminder_fields if key in data}
+
+        # ✅ Apply default reminder settings if none provided
+        if not any(reminder_data.values()):
+            subscription_cycle = data.get("subscription_cycle", "monthly")
+
+            if subscription_cycle in ["weekly", "monthly"]:
+                reminder_data["reminder_days_before"] = 7  # Default to 7 days before due date
+            else:
+                reminder_data["reminder_months_before"] = 1  # Default to 1 month before
+                reminder_data["reminder_day_of_month"] = 1  # Default to 1st day of the month
+
+            reminder_data["notification_method"] = "email"  # Default notification method
+            reminder_data["reminder_type"] = "renewal"  # Default reminder type
+            reminder_data["reminder_status"] = "pending"
+            reminder_data["recipients"] = request.user.email  # Default to user's email
+            reminder_data["custom_message"] = "Your subscription is due soon. Please renew it in time."  # Default message
 
         # Validate and create subscription
         serializer = self.get_serializer(data=data)
@@ -642,13 +594,7 @@ class SubscriptionCreateView(generics.CreateAPIView):
                 else: # Long-term cycles (e.g., yearly, custom)
                     reminder_months_before = reminder_data.get("reminder_months_before")
                     reminder_day_of_month = reminder_data.get("reminder_day_of_month")
-
-                    # if reminder_months_before is None or reminder_day_of_month is None:
-                    #     return Response(
-                    #         {"error": "reminder_months_before and reminder_day_of_month are required for long-term cycles."},
-                    #         status=status.HTTP_400_BAD_REQUEST
-                    #     )
-                    # if not reminder_months_before or not reminder_day_of_month:
+                    
                     if subscription_cycle not in ["weekly", "monthly"] and (not reminder_months_before or not reminder_day_of_month):
 
                         return Response(
@@ -681,7 +627,7 @@ class SubscriptionCreateView(generics.CreateAPIView):
                     print("First Reminder Date:", reminder_dates[0])
                 else:
                     print("❌ No Reminder Dates Generated!")
-                    # return Response({"error": "Reminder dates could not be generated."}, status=status.HTTP_400_BAD_REQUEST)
+                    return Response({"error": "Reminder dates could not be generated."}, status=status.HTTP_400_BAD_REQUEST)
 
             if reminder_dates:
                 reminder.reminder_date = reminder_dates[0]  # Assign the first reminder date
@@ -694,7 +640,6 @@ class SubscriptionCreateView(generics.CreateAPIView):
             print("Serializer Errors:", serializer.errors)  # Print detailed errors
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        # return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 # from django.utils import timezone
 # from django_filters.rest_framework import DjangoFilterBackend
@@ -1574,3 +1519,31 @@ class DashboardOverviewAll(APIView):
             #     "total_warnings": total_warnings
             # }
         })
+
+
+from rest_framework import generics, permissions
+from rest_framework.response import Response
+from SubSync.models import Notification
+from SubSync.serializers import NotificationSerializer
+
+class NotificationListView(generics.ListAPIView):
+    serializer_class = NotificationSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        """Fetch notifications related to the user's subscriptions"""
+        return Notification.objects.filter(subscription__admin=self.request.user).order_by("-created_at")
+
+class MarkNotificationAsReadView(generics.UpdateAPIView):
+    serializer_class = NotificationSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def put(self, request, pk):
+        """Mark a specific notification as read."""
+        try:
+            notification = Notification.objects.get(id=pk, subscription__admin=request.user)
+            notification.is_read = True
+            notification.save()
+            return Response({"message": "Notification marked as read"})
+        except Notification.DoesNotExist:
+            return Response({"error": "Notification not found"}, status=404)
