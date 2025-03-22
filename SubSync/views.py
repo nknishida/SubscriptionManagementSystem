@@ -1,3 +1,4 @@
+from decimal import Decimal
 import os
 from django.contrib.auth import authenticate
 from rest_framework.response import Response
@@ -105,7 +106,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny
-from .serializers import HardwareSerializer, PasswordResetSerializer, SubscriptionDetailSerializer, SubscriptionWarningSerializer
+from .serializers import CustomerSerializer, HardwareSerializer, PasswordResetSerializer, ServerUsageSerializer, SubscriptionDetailSerializer, SubscriptionWarningSerializer
 
 User = get_user_model()
 
@@ -251,7 +252,7 @@ from django.utils.timezone import now
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from .models import Customer, Subscription
+from .models import Customer, HardwareServers, Subscription
 
 class SubscriptionCountView(APIView):
     """Fetch the count of active and expired subscriptions."""
@@ -474,7 +475,7 @@ class SubscriptionCreateView(generics.CreateAPIView):
             "notificationMethod":"notification_method",
             # "nextPaymentDate":"next_payment_date",
             "customMessage":"custom_message",
-            "billingCycle":"subscription_cycle",
+            "billingCycle":"billing_cycle",
             
             "daysBeforeEnd":"optional_days_before",
             "firstReminderMonth":"reminder_months_before",
@@ -499,10 +500,24 @@ class SubscriptionCreateView(generics.CreateAPIView):
 
         print("Modified Data:", data)
         print("\n***********************************************************************************************************************************")
+
+        # ✅ Prevent duplicate subscriptions for the same user, provider, and category with overlapping dates
+        existing_subscription = Subscription.objects.filter(
+            user=request.user,
+            provider_id=data.get("provider"),
+            subscription_category=data.get("subscription_category"),
+            start_date__lte=data.get("end_date"),
+            end_date__gte=data.get("start_date"),
+            is_deleted=False  # Ignore soft-deleted records
+        ).exists()
+
+        if existing_subscription:
+            return Response({"error": "A similar active subscription already exists for this provider and category."}, status=status.HTTP_400_BAD_REQUEST)
+
         # ✅ Set 'status' dynamically
         data["status"] = "Active"
         data["reminder_type"] = "renewal"
-        data["payment_status"] = "Paid"
+        data["payment_status"] = "pending"
         # data["reminder_time"] = "14:45:00"
         data["reminder_status"] = "pending"
         # ✅ Assign 'user' field (assuming user is the logged-in user)
@@ -531,7 +546,7 @@ class SubscriptionCreateView(generics.CreateAPIView):
 
         # Extract and remove reminder-related fields before subscription creation
         reminder_fields = [
-            "reminder_type", "subscription_cycle", "reminder_days_before",
+            "reminder_type",  "reminder_days_before",
             "reminder_months_before", "reminder_day_of_month",
             "notification_method", "recipients", "custom_message", "optional_days_before"
         ]
@@ -539,9 +554,9 @@ class SubscriptionCreateView(generics.CreateAPIView):
 
         # ✅ Apply default reminder settings if none provided
         if not any(reminder_data.values()):
-            subscription_cycle = data.get("subscription_cycle", "monthly")
+            # subscription_cycle = data.get("subscription_cycle", "monthly")
 
-            if subscription_cycle in ["weekly", "monthly"]:
+            if subscription.billing_cycle in ["weekly", "monthly"]:
                 reminder_data["reminder_days_before"] = 7  # Default to 7 days before due date
             else:
                 reminder_data["reminder_months_before"] = 1  # Default to 1 month before
@@ -576,10 +591,10 @@ class SubscriptionCreateView(generics.CreateAPIView):
 
             # Create the reminder entry if reminder data exists
             if reminder_data:
-                subscription_cycle = reminder_data.get("subscription_cycle")
+                # subscription_cycle = reminder_data.get("subscription_cycle")
 
                 # Validate reminder fields based on subscription cycle
-                if subscription_cycle in ["weekly", "monthly"]:
+                if subscription.billing_cycle in ["weekly", "monthly"]:
                     reminder_days_before = reminder_data.get("reminder_days_before")
                     print("Reminder Days Before:", reminder_days_before)
 
@@ -595,7 +610,7 @@ class SubscriptionCreateView(generics.CreateAPIView):
                     reminder_months_before = reminder_data.get("reminder_months_before")
                     reminder_day_of_month = reminder_data.get("reminder_day_of_month")
                     
-                    if subscription_cycle not in ["weekly", "monthly"] and (not reminder_months_before or not reminder_day_of_month):
+                    if subscription.billing_cycle not in ["weekly", "monthly"] and (not reminder_months_before or not reminder_day_of_month):
 
                         return Response(
                             {"error": "reminder_months_before and reminder_day_of_month are required for long-term cycles."},
@@ -605,7 +620,7 @@ class SubscriptionCreateView(generics.CreateAPIView):
             if reminder_data:
                 # Create Reminder
                 reminder = Reminder.objects.create(
-                    subscription_cycle=subscription_cycle,
+                    # subscription_cycle=subscription_cycle,
                     reminder_days_before=reminder_data.get("reminder_days_before"),
                     reminder_months_before=reminder_data.get("reminder_months_before"),
                     reminder_day_of_month=reminder_data.get("reminder_day_of_month"),
@@ -627,7 +642,7 @@ class SubscriptionCreateView(generics.CreateAPIView):
                     print("First Reminder Date:", reminder_dates[0])
                 else:
                     print("❌ No Reminder Dates Generated!")
-                    return Response({"error": "Reminder dates could not be generated."}, status=status.HTTP_400_BAD_REQUEST)
+                    # return Response({"error": "Reminder dates could not be generated."}, status=status.HTTP_400_BAD_REQUEST)
 
             if reminder_dates:
                 reminder.reminder_date = reminder_dates[0]  # Assign the first reminder date
@@ -801,22 +816,24 @@ class SubscriptionDetailUpdateView(APIView):
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-from datetime import datetime, timedelta
-import csv
-from django.http import HttpResponse
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from SubSync.models import Subscription
-from SubSync.serializers import SubscriptionSerializer
+# from datetime import datetime, timedelta
+# from collections import defaultdict
+# from django.db.models import Sum
+# from rest_framework.response import Response
+# from rest_framework.views import APIView
+# from rest_framework import status
+# from SubSync.models import Subscription
+# from SubSync.serializers import SubscriptionSerializer
+# from decimal import Decimal
 
 # class ExpenditureAnalysisView(APIView):
 #     """
 #     API View for Monthly Expenditure Analysis.
-#     Allows filtering by time range, category, and provider.
+#     Provides structured data for visualization (line chart, pie chart).
 #     """
 
 #     permission_classes = [AllowAny]
+
 #     def get(self, request):
 #         # Extract filters
 #         time_range = request.GET.get("time_range", "current_month")
@@ -843,11 +860,17 @@ from SubSync.serializers import SubscriptionSerializer
 #             subscriptions = subscriptions.filter(provider=provider)
 
 #         # Calculate total expenditure
-#         total_expenditure = sum(sub.cost for sub in subscriptions)
+#         total_expenditure = subscriptions.aggregate(Sum("cost"))["cost__sum"] or 0
+
+#         # Prepare data for charts
+#         line_chart_data = self.get_spending_trends(subscriptions)
+#         pie_chart_data = self.get_category_wise_expenditure(subscriptions)
 
 #         # Prepare response data
 #         response_data = {
 #             "total_expenditure": total_expenditure,
+#             "spending_trends": line_chart_data,  # Data for line chart
+#             "category_breakdown": pie_chart_data,  # Data for pie chart
 #             "subscriptions": SubscriptionSerializer(subscriptions, many=True).data,
 #         }
 
@@ -859,243 +882,296 @@ from SubSync.serializers import SubscriptionSerializer
 
 #         return Response(response_data, status=status.HTTP_200_OK)
 
-#     def export_csv(self, subscriptions):
-#         """
-#         Exports expenditure data as a CSV file.
-#         """
-#         response = HttpResponse(content_type="text/csv")
-#         response["Content-Disposition"] = 'attachment; filename="expenditure_report.csv"'
-#         writer = csv.writer(response)
+#     # def get_spending_trends(self, subscriptions):
+#     #     """
+#     #     Aggregates monthly expenditure for line chart.
+#     #     """
+#     #     trends = defaultdict(float)
 
-#         # Write CSV headers
-#         writer.writerow(["Subscription Name", "Category", "Cost", "Start Date", "End Date"])
+#     #     for sub in subscriptions:
+#     #         month = sub.start_date.strftime("%Y-%m")  # Grouping by YYYY-MM
+#     #         trends[month] += sub.cost
 
-#         # Write data rows
+#     #     # Convert to sorted list
+#     #     return [{"month": key, "expenditure": value} for key, value in sorted(trends.items())]
+#     def get_spending_trends(self, subscriptions):
+#         """
+#         Aggregates monthly expenditure for line chart.
+#         """
+#         trends = defaultdict(Decimal)  # Use Decimal instead of float to match sub.cost type
+
 #         for sub in subscriptions:
-#             writer.writerow([sub.software_name or sub.server_name or sub.domain_name or sub.utility_name,
-#                              sub.subscription_category, sub.cost, sub.start_date, sub.end_date])
+#             month = sub.start_date.strftime("%Y-%m")  # Grouping by YYYY-MM
+#             trends[month] += Decimal(sub.cost)  # Ensure correct type
 
-#         return response
+#     # Convert to sorted list with float values for JSON compatibility
+#         return [{"month": key, "expenditure": float(value)} for key, value in sorted(trends.items())]
 
-    # def export_pdf(self, subscriptions):
-    #     """
-    #     Exports expenditure data as a PDF file.
-    #     """
-    #     # Implement PDF generation (e.g., using ReportLab)
-    #     return Response({"message": "PDF export not implemented yet"}, status=status.HTTP_501_NOT_IMPLEMENTED)
+#     def get_category_wise_expenditure(self, subscriptions):
+#         """
+#         Aggregates expenditure per category for pie chart.
+#         """
+#         category_data = defaultdict(float)
 
-from datetime import datetime, timedelta
-from collections import defaultdict
-from django.db.models import Sum
-from rest_framework.response import Response
-from rest_framework.views import APIView
-from rest_framework import status
-from SubSync.models import Subscription
-from SubSync.serializers import SubscriptionSerializer
-from decimal import Decimal
+#         for sub in subscriptions:
+#             category_data[sub.subscription_category] += sub.cost
 
-class ExpenditureAnalysisView(APIView):
-    """
-    API View for Monthly Expenditure Analysis.
-    Provides structured data for visualization (line chart, pie chart).
-    """
+#         # Convert to list
+#         return [{"category": key, "expenditure": value} for key, value in category_data.items()]
 
-    permission_classes = [AllowAny]
-
-    def get(self, request):
-        # Extract filters
-        time_range = request.GET.get("time_range", "current_month")
-        category = request.GET.get("subscription_category", None)
-        provider = request.GET.get("provider", None)
-        export_format = request.GET.get("export", None)  # csv or pdf
-
-        # Determine start date based on time range
-        today = datetime.today().date()
-        if time_range == "last_3_months":
-            start_date = today - timedelta(days=90)
-        elif time_range == "yearly":
-            start_date = today.replace(month=1, day=1)
-        else:  # Default to current month
-            start_date = today.replace(day=1)
-
-        # Fetch subscriptions within the date range
-        subscriptions = Subscription.objects.filter(start_date__gte=start_date)
-
-        # Apply additional filters
-        if category:
-            subscriptions = subscriptions.filter(subscription_category=category)
-        if provider:
-            subscriptions = subscriptions.filter(provider=provider)
-
-        # Calculate total expenditure
-        total_expenditure = subscriptions.aggregate(Sum("cost"))["cost__sum"] or 0
-
-        # Prepare data for charts
-        line_chart_data = self.get_spending_trends(subscriptions)
-        pie_chart_data = self.get_category_wise_expenditure(subscriptions)
-
-        # Prepare response data
-        response_data = {
-            "total_expenditure": total_expenditure,
-            "spending_trends": line_chart_data,  # Data for line chart
-            "category_breakdown": pie_chart_data,  # Data for pie chart
-            "subscriptions": SubscriptionSerializer(subscriptions, many=True).data,
-        }
-
-        # Handle export requests
-        if export_format == "csv":
-            return self.export_csv(subscriptions)
-        elif export_format == "pdf":
-            return self.export_pdf(subscriptions)
-
-        return Response(response_data, status=status.HTTP_200_OK)
-
-    # def get_spending_trends(self, subscriptions):
-    #     """
-    #     Aggregates monthly expenditure for line chart.
-    #     """
-    #     trends = defaultdict(float)
-
-    #     for sub in subscriptions:
-    #         month = sub.start_date.strftime("%Y-%m")  # Grouping by YYYY-MM
-    #         trends[month] += sub.cost
-
-    #     # Convert to sorted list
-    #     return [{"month": key, "expenditure": value} for key, value in sorted(trends.items())]
-    def get_spending_trends(self, subscriptions):
-        """
-        Aggregates monthly expenditure for line chart.
-        """
-        trends = defaultdict(Decimal)  # Use Decimal instead of float to match sub.cost type
-
-        for sub in subscriptions:
-            month = sub.start_date.strftime("%Y-%m")  # Grouping by YYYY-MM
-            trends[month] += Decimal(sub.cost)  # Ensure correct type
-
-    # Convert to sorted list with float values for JSON compatibility
-        return [{"month": key, "expenditure": float(value)} for key, value in sorted(trends.items())]
-
-    def get_category_wise_expenditure(self, subscriptions):
-        """
-        Aggregates expenditure per category for pie chart.
-        """
-        category_data = defaultdict(float)
-
-        for sub in subscriptions:
-            category_data[sub.subscription_category] += sub.cost
-
-        # Convert to list
-        return [{"category": key, "expenditure": value} for key, value in category_data.items()]
-
-from django.http import HttpResponse
+from django.db.models.functions import ExtractYear, ExtractMonth
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status
-import csv
-import pandas as pd
-from reportlab.pdfgen import canvas
+from rest_framework.permissions import IsAuthenticated
 from datetime import datetime
 from collections import defaultdict
-from decimal import Decimal
-from .models import Subscription
-from .serializers import SubscriptionSerializer
+from .models import SoftwareSubscriptions, Servers, Domain, Utilities
+import logging
+logger = logging.getLogger(__name__)
 
-class GenerateSubscriptionReportView(APIView):
-    """
-    API View for generating subscription reports based on filters.
-    Supports exporting to PDF, CSV, and Excel.
-    """
-    
+class ExpenditureAnalysisView(APIView):
+    permission_classes = [IsAuthenticated]
+
     def get(self, request):
-        category = request.GET.get("category")
-        provider = request.GET.get("provider")
-        status_filter = request.GET.get("status")  # active/expired
-        start_date = request.GET.get("start_date")
-        end_date = request.GET.get("end_date")
-        export_format = request.GET.get("export")  # pdf/csv/excel
+        current_year = datetime.now().year
+        logger.info("Fetching expenditure data for analysis...")
+
+        # Aggregate expenses by year & month
+        software_expenses = (
+            SoftwareSubscriptions.objects
+            .annotate(year=ExtractYear('subscription__start_date'), month=ExtractMonth('subscription__start_date'))
+            .values('year', 'month')
+            .annotate(total=Sum('subscription__cost'))
+        )
+        logger.info(f"Software expenses: {list(software_expenses)}")
+
+        server_expenses = (
+            Servers.objects
+            .annotate(year=ExtractYear('subscription__start_date'), month=ExtractMonth('subscription__start_date'))
+            .values('year', 'month')
+            .annotate(total=Sum('subscription__cost'))
+        )
+        logger.info(f"Server expenses: {list(server_expenses)}")
+
+        domain_expenses = (
+            Domain.objects
+            .annotate(year=ExtractYear('subscription__start_date'), month=ExtractMonth('subscription__start_date'))
+            .values('year', 'month')
+            .annotate(total=Sum('subscription__cost'))
+        )
+        logger.info(f"Domain expenses: {list(domain_expenses)}")
+
+        utility_expenses = (
+            Utilities.objects
+            .annotate(year=ExtractYear('subscription__start_date'), month=ExtractMonth('subscription__start_date'))
+            .values('year', 'month')
+            .annotate(total=Sum('subscription__cost'))
+        )
+        logger.info(f"Utility expenses: {list(utility_expenses)}")
+
+        # Store data in a structured format
+        expenditure_data = defaultdict(lambda: {'Software': 0, 'Server': 0, 'Domain': 0, 'Utility': 0})
+
+        # Populate data from each expense type
+        for entry in software_expenses:
+            expenditure_data[(entry['year'], entry['month'])]['Software'] = entry['total']
+
+        for entry in server_expenses:
+            expenditure_data[(entry['year'], entry['month'])]['Server'] = entry['total']
+
+        for entry in domain_expenses:
+            expenditure_data[(entry['year'], entry['month'])]['Domain'] = entry['total']
+
+        for entry in utility_expenses:
+            expenditure_data[(entry['year'], entry['month'])]['Utility'] = entry['total']
+
+        logger.info(f"Aggregated expenditure data: {dict(expenditure_data)}")
+
+        # Convert structured data into the required format
+        formatted_data = [
+            {
+                "month": datetime(year, month, 1).strftime('%b'),
+                "Software": data["Software"],
+                "Server": data["Server"],
+                "Domain": data["Domain"],
+                "Utility": data["Utility"],
+                "year": year
+            }
+            for (year, month), data in sorted(expenditure_data.items())
+        ]
+        logger.info(f"Final formatted expenditure data: {formatted_data}")
+
+        return Response(formatted_data)
+
+# from django.http import HttpResponse
+# from rest_framework.views import APIView
+# from rest_framework.response import Response
+# from rest_framework import status
+# import csv
+# import pandas as pd
+# from reportlab.pdfgen import canvas
+# from datetime import datetime
+# from collections import defaultdict
+# from decimal import Decimal
+# from .models import Subscription
+# from .serializers import SubscriptionSerializer
+
+# class GenerateSubscriptionReportView(APIView):
+#     """
+#     API View for generating subscription reports based on filters.
+#     Supports exporting to PDF, CSV, and Excel.
+#     """
+    
+#     def get(self, request):
+#         category = request.GET.get("category")
+#         provider = request.GET.get("provider")
+#         status_filter = request.GET.get("status")  # active/expired
+#         start_date = request.GET.get("start_date")
+#         end_date = request.GET.get("end_date")
+#         export_format = request.GET.get("export")  # pdf/csv/excel
         
-        # Filtering subscriptions
-        subscriptions = Subscription.objects.all()
-        if category:
-            subscriptions = subscriptions.filter(subscription_category=category)
-        if provider:
-            subscriptions = subscriptions.filter(provider=provider)
-        if status_filter == "active":
-            subscriptions = subscriptions.filter(end_date__gte=datetime.today().date())
-        elif status_filter == "expired":
-            subscriptions = subscriptions.filter(end_date__lt=datetime.today().date())
-        if start_date and end_date:
-            subscriptions = subscriptions.filter(start_date__gte=start_date, end_date__lte=end_date)
+#         # Filtering subscriptions
+#         subscriptions = Subscription.objects.all()
+#         if category:
+#             subscriptions = subscriptions.filter(subscription_category=category)
+#         if provider:
+#             subscriptions = subscriptions.filter(provider=provider)
+#         if status_filter == "active":
+#             subscriptions = subscriptions.filter(end_date__gte=datetime.today().date())
+#         elif status_filter == "expired":
+#             subscriptions = subscriptions.filter(end_date__lt=datetime.today().date())
+#         if start_date and end_date:
+#             subscriptions = subscriptions.filter(start_date__gte=start_date, end_date__lte=end_date)
         
-        if not subscriptions.exists():
-            return Response({"message": "No subscriptions found for the selected filters."}, status=status.HTTP_404_NOT_FOUND)
+#         if not subscriptions.exists():
+#             return Response({"message": "No subscriptions found for the selected filters."}, status=status.HTTP_404_NOT_FOUND)
         
-        # Export Handling
-        if export_format == "csv":
-            return self.export_csv(subscriptions)
-        elif export_format == "pdf":
-            return self.export_pdf(subscriptions)
-        elif export_format == "excel":
-            return self.export_excel(subscriptions)
+#         # Export Handling
+#         if export_format == "csv":
+#             return self.export_csv(subscriptions)
+#         elif export_format == "pdf":
+#             return self.export_pdf(subscriptions)
+#         elif export_format == "excel":
+#             return self.export_excel(subscriptions)
         
-        # Default JSON Response
-        response_data = {
-            "subscriptions": SubscriptionSerializer(subscriptions, many=True).data
+#         # Default JSON Response
+#         response_data = {
+#             "subscriptions": SubscriptionSerializer(subscriptions, many=True).data
+#         }
+#         return Response(response_data, status=status.HTTP_200_OK)
+
+#     def export_csv(self, subscriptions):
+#         response = HttpResponse(content_type="text/csv")
+#         response["Content-Disposition"] = 'attachment; filename="subscription_report.csv"'
+#         writer = csv.writer(response)
+        
+#         # Write headers
+#         writer.writerow(["Subscription Name", "Category", "Provider", "Cost", "Start Date", "End Date"])
+        
+#         # Write subscription data
+#         for sub in subscriptions:
+#             writer.writerow([
+#                 sub.software_name or sub.server_name or sub.domain_name or sub.utility_name,
+#                 sub.subscription_category, sub.provider, sub.cost, sub.start_date, sub.end_date
+#             ])
+        
+#         return response
+    
+#     def export_pdf(self, subscriptions):
+#         response = HttpResponse(content_type="application/pdf")
+#         response["Content-Disposition"] = 'attachment; filename="subscription_report.pdf"'
+#         pdf = canvas.Canvas(response)
+#         pdf.drawString(100, 800, "Subscription Report")
+        
+#         y = 780
+#         pdf.drawString(50, y, "Subscription Name | Category | Provider | Cost | Start Date | End Date")
+#         y -= 20
+        
+#         for sub in subscriptions:
+#             pdf.drawString(50, y, f"{sub.software_name or sub.server_name or sub.domain_name or sub.utility_name} | {sub.subscription_category} | {sub.provider} | {sub.cost} | {sub.start_date} | {sub.end_date}")
+#             y -= 20
+        
+#         pdf.showPage()
+#         pdf.save()
+#         return response
+    
+#     def export_excel(self, subscriptions):
+#         response = HttpResponse(content_type="application/vnd.ms-excel")
+#         response["Content-Disposition"] = 'attachment; filename="subscription_report.xlsx"'
+        
+#         data = [{
+#             "Subscription Name": sub.software_name or sub.server_name or sub.domain_name or sub.utility_name,
+#             "Category": sub.subscription_category,
+#             "Provider": sub.provider,
+#             "Cost": float(sub.cost),
+#             "Start Date": sub.start_date,
+#             "End Date": sub.end_date,
+#         } for sub in subscriptions]
+        
+#         df = pd.DataFrame(data)
+#         df.to_excel(response, index=False)
+#         return response
+
+from collections import defaultdict
+from datetime import datetime
+from django.db.models import Sum
+from django.db.models.functions import ExtractYear, ExtractMonth
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from SubSync.models import SoftwareSubscriptions, Servers, Domain, Utilities
+import logging
+
+logger = logging.getLogger(__name__)
+
+class SubscriptionReportView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        logger.info("Fetching subscription data for report...")
+        
+        # Fetch current year
+        current_year = datetime.now().year
+
+        # Define categories
+        categories = {
+            "software": SoftwareSubscriptions,
+            "server": Servers,
+            "domain": Domain,
+            "utility": Utilities
         }
-        return Response(response_data, status=status.HTTP_200_OK)
 
-    def export_csv(self, subscriptions):
-        response = HttpResponse(content_type="text/csv")
-        response["Content-Disposition"] = 'attachment; filename="subscription_report.csv"'
-        writer = csv.writer(response)
-        
-        # Write headers
-        writer.writerow(["Subscription Name", "Category", "Provider", "Cost", "Start Date", "End Date"])
-        
-        # Write subscription data
-        for sub in subscriptions:
-            writer.writerow([
-                sub.software_name or sub.server_name or sub.domain_name or sub.utility_name,
-                sub.subscription_category, sub.provider, sub.cost, sub.start_date, sub.end_date
-            ])
-        
-        return response
-    
-    def export_pdf(self, subscriptions):
-        response = HttpResponse(content_type="application/pdf")
-        response["Content-Disposition"] = 'attachment; filename="subscription_report.pdf"'
-        pdf = canvas.Canvas(response)
-        pdf.drawString(100, 800, "Subscription Report")
-        
-        y = 780
-        pdf.drawString(50, y, "Subscription Name | Category | Provider | Cost | Start Date | End Date")
-        y -= 20
-        
-        for sub in subscriptions:
-            pdf.drawString(50, y, f"{sub.software_name or sub.server_name or sub.domain_name or sub.utility_name} | {sub.subscription_category} | {sub.provider} | {sub.cost} | {sub.start_date} | {sub.end_date}")
-            y -= 20
-        
-        pdf.showPage()
-        pdf.save()
-        return response
-    
-    def export_excel(self, subscriptions):
-        response = HttpResponse(content_type="application/vnd.ms-excel")
-        response["Content-Disposition"] = 'attachment; filename="subscription_report.xlsx"'
-        
-        data = [{
-            "Subscription Name": sub.software_name or sub.server_name or sub.domain_name or sub.utility_name,
-            "Category": sub.subscription_category,
-            "Provider": sub.provider,
-            "Cost": float(sub.cost),
-            "Start Date": sub.start_date,
-            "End Date": sub.end_date,
-        } for sub in subscriptions]
-        
-        df = pd.DataFrame(data)
-        df.to_excel(response, index=False)
-        return response
+        # Store data in a structured format
+        expenditure_data = defaultdict(lambda: {"software": 0, "server": 0, "domain": 0, "utility": 0})
 
+        # Populate data from each category
+        for category, model in categories.items():
+            expenses = (
+                model.objects
+                .annotate(year=ExtractYear('subscription__start_date'), month=ExtractMonth('subscription__start_date'))
+                .values('year', 'month')
+                .annotate(total=Sum('subscription__cost'))
+            )
+            
+            for entry in expenses:
+                expenditure_data[(entry['year'], entry['month'])][category] = entry['total']
+
+        logger.info(f"Aggregated subscription data: {dict(expenditure_data)}")
+
+        # Format data as per required output
+        formatted_data = defaultdict(list)
+        for (year, month), data in sorted(expenditure_data.items()):
+            formatted_data[str(year)].append({
+                "month": datetime(year, month, 1).strftime('%B'),
+                "software": data["software"],
+                "domain": data["domain"],
+                "server": data["server"],
+                "utility": data["utility"],
+                "total": data["software"] + data["domain"] + data["server"] + data["utility"]
+            })
+
+        logger.info(f"Final formatted subscription report: {formatted_data}")
+        return Response(formatted_data)
 
 
 class HardwareSummaryView(APIView):
@@ -1162,23 +1238,137 @@ class UpcomingHardwareAPIView(APIView):
 
         return Response({"upcoming_hardware": data})
 
+from django.utils.dateparse import parse_date
 
 class AddHardwareAPIView(APIView):
     permission_classes=[IsAuthenticated]
     
     def post(self, request, *args, **kwargs):
-        serializer = HardwareSerializer(data=request.data)
-        # serializer = HardwareSerializer(data=request.data, context={'request': request}) 
+        logger.info("Received request data: %s", request.data)
+        # serializer = HardwareSerializer(data=request.data)
+        # serializer = HardwareSerializer(data=request.data, context={'request': request})
+        # Convert frontend fields to match backend model
+        converted_data = self.convert_frontend_to_backend(request.data)
+        converted_data["user"] = request.user.id
+        converted_data["status"] = "Active"
+        logger.info("Converted data: %s", converted_data)
+
+        if Hardware.objects.filter(serial_number=converted_data["serial_number"]).exists():
+            return Response({"message": "Duplicate serial number"}, status=status.HTTP_400_BAD_REQUEST)
         
+        serializer = HardwareSerializer(data=converted_data, context={'request': request}) 
+ 
         if serializer.is_valid():
             # serializer.save()
-            serializer.save(user=request.user)
+            hardware=serializer.save(user=request.user)
+            logger.info("Successfully added hardware: %s", hardware)
             return Response({
                 "message": "Hardware successfully added.",
-                "data": serializer.data
+                "data": serializer.data,
+                "status": status.HTTP_201_CREATED
             }, status=status.HTTP_201_CREATED)
         
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        if not serializer.is_valid():
+            logger.info("HardwareSerializer validation errors: %s", serializer.errors)
+            return Response({
+            "message": "Failed to add hardware. Please check the input data.",
+            "errors": serializer.errors,
+            }, status=status.HTTP_400_BAD_REQUEST)
+    
+    def convert_frontend_to_backend(self, data):
+        try:
+            converted = {
+                "hardware_type": data.get("deviceType"),
+                "manufacturer": data.get("manufacturer"),
+                "model_number": data.get("model"),
+                "serial_number": data.get("serialNumber"),
+                "assigned_department": data.get("assignedTo"),
+                "notes": data.get("notes"),
+                # "status": "active",  # Set default status
+                "purchase": {
+                    "purchase_date": parse_date(data.get("purchaseDate")),
+                    "purchase_cost": parse_date(data.get("purchasecost"))
+                },
+                "warranty": {
+                    "warranty_expiry_date": parse_date(data.get("warrantyExpiryDate")),
+                    "is_extended_warranty": data.get("isExtendedWarranty", False),
+                    "extended_warranty_period": int(data.get("extendedWarrantyPeriod", 0) or 0),
+                },
+                "services": [{
+                    "last_service_date": parse_date(data.get("lastServiceDate")),
+                    "next_service_date": parse_date(data.get("nextServiceDate")),
+                    "free_service_until": parse_date(data.get("freeServiceUntil")),
+                    "service_cost": Decimal(data["serviceCost"]) if data.get("serviceCost") else None,
+                    "service_provider": data.get("serviceProvider"),
+                }],
+                
+            }
+            
+            if data.get("deviceType") == "Mobile Phone":
+                converted["portable_device"] = {
+                    "device_type": "Mobile Phone",
+                    "os_version": data.get("OS_Version"),
+                    "storage": data.get("Storage"),
+                    "imei_number": data.get("IMEI_Number"),
+                }
+            if data.get("deviceType") == "Tablet":
+                converted["portable_device"] = {
+                    "device_type": "Tablet",
+                    "os_version": data.get("OS_Version"),
+                    "storage": data.get("Storage"),
+                    "imei_number": data.get("IMEI_Number"),
+                }
+
+            if data.get("deviceType") == "Laptop":
+                converted["computer"] = {
+                    "computer_type": "Laptop",
+                    "cpu": data.get("CPU"),
+                    "ram": data.get("RAM"),
+                    "storage": data.get("Storage"),
+                }
+            if data.get("deviceType") == "Desktop":
+                converted["computer"] = {
+                    "computer_type": "Desktop",
+                    "cpu": data.get("CPU"),
+                    "ram": data.get("RAM"),
+                    "storage": data.get("Storage"),
+                }
+
+            if data.get("deviceType") == "Network Device":
+                converted["Network Device"] = {
+                    "throughput": data.get("Throughput"),
+                    "ip_address": data.get("IP_Address"),
+                }
+            if data.get("deviceType") == "Air Conditioner":
+                converted["Air Conditioner"] = {
+                    "btu_rating": data.get("BTU_Rating"),
+                    "energy_rating": data.get("EnergyP_Rating"),
+                }
+            if data.get("deviceType") == "On-Premise Server":
+                converted["On-Premise Server"] = {
+                    "cpu": data.get("CPU"),
+                    "ram": data.get("RAM"),
+                    "storage_configuration": data.get("Storage_Configuration"),
+                    "operating_system": data.get("Operating_System"),
+                }
+            if data.get("deviceType") == "Printer":
+                converted["Printer"] = {
+                    "print_technology": data.get("Print_Technology"),
+                    "print_speed": data.get("Print_Speed"),
+                    "connectivity": data.get("Connectivity"),
+                }
+            if data.get("deviceType") == "Scanner":
+                converted["Scanner"] = {
+                    "scan_resolution": data.get("Scan_Resolution"),
+                    "scan_type": data.get("Scan_Type"),
+                    "connectivity": data.get("Connectivity"),
+                }
+            
+            return converted
+        
+        except Exception as e:
+                logger.exception("Error while converting frontend data to backend model format: %s", str(e))
+                return {}
     
 from rest_framework.filters import SearchFilter, OrderingFilter
 from django.db.models import F
@@ -1415,11 +1605,13 @@ class ResourceCreateView(generics.CreateAPIView):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
-            serializer.save()
+            serializer.save(user=request.user)
             return Response(
                 {"message": "Resource created successfully!", "resource": serializer.data},
                 status=status.HTTP_201_CREATED
             )
+        
+        print("Serializer Errors:", serializer.errors)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 from datetime import timedelta
@@ -1432,6 +1624,8 @@ from SubSync.models import Subscription, Hardware, Customer
 from django.utils.timezone import now
 from django.db.models import Sum
 from django.db.models import F, ExpressionWrapper, DurationField
+from datetime import date, timedelta
+import calendar
 
 class DashboardOverviewAll(APIView):
     permission_classes = [IsAuthenticated]  # Secure the endpoint
@@ -1447,8 +1641,12 @@ class DashboardOverviewAll(APIView):
         total_active_hardware = Hardware.objects.filter(status="Active",is_deleted=False).count()
         total_hardware=Hardware.objects.filter(is_deleted=False).count()
 
-        active_count = Subscription.objects.filter(end_date__gte=now()).count()
-        expired_count = Subscription.objects.filter(end_date__lt=now()).count()
+        # active_count = Subscription.objects.filter(end_date__gte=now()).count()
+        active_count = Subscription.objects.filter(status="Active").count()
+        print(f"active count {active_count}")
+        # expired_count = Subscription.objects.filter(end_date__lt=now()).count()
+        expired_count = Subscription.objects.filter(status="Expired").count()
+        print(f"expired count {expired_count}")
 
         # Monthly Cost Analysis
         # Get first and last day of the current month
@@ -1465,18 +1663,23 @@ class DashboardOverviewAll(APIView):
         purchase_cost = Hardware.objects.filter(
             is_deleted=False,
             purchase__purchase_date__gte=first_day  # Ensure the purchase was in the current month
-        ).aggregate(total_cost=Sum("purchase__purchase_cost"))["total_cost"] or 0
+        ).aggregate(total_cost=Sum("purchase__purchase_cost"))["total_cost"] or 0        
 
-        # 3️⃣ Add maintenance cost if it's stored separately
-        next_service_expr = ExpressionWrapper(
-            F("service__last_service_date") + F("service__service_period") * timedelta(days=1),
-            output_field=DurationField()
-        )
-
-        maintenance_cost = Hardware.objects.annotate(next_service_date=next_service_expr).filter(
-            next_service_date__gte=first_day  # Correct filter placement
-        ).aggregate(total_cost=Sum("service__service_cost"))["total_cost"] or 0
-        
+        # last_day = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
+        last_day = date(today.year, today.month, calendar.monthrange(today.year, today.month)[1])
+        print("last day",last_day)
+        maintenance_cost = Hardware.objects.filter(
+            services__next_service_date__gte=first_day,
+            services__next_service_date__lte=last_day            
+        ).aggregate(
+            total_cost=Sum("services__service_cost")
+        )["total_cost"] or 0
+        # maintenance_cost = HardwareService.objects.filter(
+        #     next_service_date__gte=first_day,
+        #     next_service_date__lte=last_day
+        # ).aggregate(
+        #     total_cost=Sum("service_cost")
+        # )["total_cost"] or 0
         print("purchase cost",purchase_cost,"maintanace cost", maintenance_cost)
         # 4️⃣ Final hardware cost including maintenance
         total_hardware_cost = purchase_cost + maintenance_cost
@@ -1492,6 +1695,9 @@ class DashboardOverviewAll(APIView):
 
         # Total Warnings Count
         total_warnings = renewal_subscriptions + warranty_expiring + maintenance_due 
+        total_resources=Resource.objects.filter(status="Active").count()
+        print("total_resources",total_resources)
+
         return Response({
             "total_active_subscriptions": active_count,
             "total_active_customers": total_active_customers,
@@ -1499,12 +1705,13 @@ class DashboardOverviewAll(APIView):
             "total_hardware":total_hardware,
             "expired_count": expired_count,
 
-            "subscription_cost": total_subscription_cost,
+            "total_subscription_cost": total_subscription_cost,
             "hardware_cost": total_hardware_cost,
             "renewal_subscriptions": renewal_subscriptions,
             "warranty_expiring": warranty_expiring,
             "maintenance_due": maintenance_due,
-            "total_warnings": total_warnings
+            "total_warnings": total_warnings,
+            "total_resources": total_resources
 
             # "monthly_cost_analysis": {
             #     "subscription_cost": total_subscription_cost,
@@ -1547,3 +1754,203 @@ class MarkNotificationAsReadView(generics.UpdateAPIView):
             return Response({"message": "Notification marked as read"})
         except Notification.DoesNotExist:
             return Response({"error": "Notification not found"}, status=404)
+
+
+from celery.result import AsyncResult
+from celery import current_app
+
+def cancel_scheduled_tasks(reminder):
+    """Cancel scheduled Celery tasks for a reminder."""
+    if reminder.scheduled_task_id:
+        task_ids = reminder.scheduled_task_id.split(",")  # Split comma-separated task IDs
+        for task_id in task_ids:
+            try:
+                # Revoke the task
+                current_app.control.revoke(task_id, terminate=True)
+                logger.info(f"Cancelled task with ID: {task_id}")
+            except Exception as e:
+                logger.error(f"Failed to cancel task with ID: {task_id}: {e}")
+
+        # Clear the scheduled_task_id field
+        reminder.scheduled_task_id = None
+        reminder.save()
+
+# class ServerListByHostingTypeAPIView(APIView):
+#     def get(self, request):
+#         permission_classes = [permissions.IsAuthenticated]
+#         hosting_type = request.query_params.get('hosting_type')
+
+#         if not hosting_type:
+#             return Response({"error": "hosting_type is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+#         # Mapping frontend input to model values
+#         # hosting_type_map = {
+#         #     "on-premise": "on-premise",
+#         #     "External": "External",
+#         #     "cloud": "Cloud"
+#         # }
+
+#         # if hosting_type not in hosting_type_map:
+#         #     return Response({"error": "Invalid hosting_type. Choose 'internal' or 'external'."}, status=status.HTTP_400_BAD_REQUEST)
+
+#         servers = Servers.objects.filter(server_type=hosting_type_map[hosting_type]).values_list('server_name', flat=True)
+
+#         return Response({"servers": list(servers)}, status=status.HTTP_200_OK)
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status, permissions
+from .models import Servers, HardwareService  # Ensure correct import
+
+class ServerListByHostingTypeAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]  # Ensure authentication
+
+    def get(self, request):
+        hosting_type = request.query_params.get('hosting_type')
+
+        if not hosting_type:
+            return Response({"error": "hosting_type is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Fetch server names based on hosting_type
+        if hosting_type.lower() == "on premise server":
+            servers = HardwareServers.objects.values_list('cpu', flat=True)
+
+        elif hosting_type.lower() == "external":
+            servers = Servers.objects.filter(server_type="External").values_list('server_name', flat=True)
+
+        elif hosting_type.lower() == "cloud":
+            servers = Servers.objects.filter(server_type="Internal").values_list('server_name', flat=True)
+
+        else:
+            return Response(
+                {"error": "Invalid hosting_type. Choose 'on premise server', 'external', or 'cloud'."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        return Response({"servers": list(servers)}, status=status.HTTP_200_OK)
+    
+class CustomerAPIView(APIView):
+    permission_classes=[IsAuthenticated]
+
+    def post(self, request):
+        print(f"🔍 Received request data: {request.data}") 
+        # serializer = CustomerSerializer(data=request.data)
+        data = request.data.copy()  # Make a mutable copy
+        data['user'] = request.user.id  # Assign authenticated user
+        data['status'] = "Active"
+
+        # 🔍 Check for duplicates based on name & email
+        existing_customer = Customer.objects.filter(
+            customer_name=data['customer_name'], email=data['customer_email']
+        ).first()
+
+        if existing_customer:
+            return Response(
+                {"message": "Customer already exists!", "customer_id": existing_customer.id},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        serializer = CustomerSerializer(data=data)
+
+        if serializer.is_valid():
+            customer = serializer.save()
+            print(f"✅ Customer saved successfully: {customer}")
+            return Response({"message": "Customer added successfully", "customer": serializer.data ,"status":status.HTTP_201_CREATED}, status=status.HTTP_201_CREATED)
+        print(f"❌ Validation failed: {serializer.errors}") 
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+class ServerUsageView(APIView):
+    def get(self, request):
+        servers = Servers.objects.all()
+        serializer = ServerUsageSerializer(servers, many=True)
+        return Response(serializer.data)
+    
+# ✅ API to List All Customers
+class CustomerListView(generics.ListAPIView):
+    permission_classes = [IsAuthenticated]
+    queryset = Customer.objects.all()
+    serializer_class = CustomerSerializer
+
+# ✅ API to Retrieve, Update, or Delete a Customer
+class CustomerDetailView(generics.RetrieveUpdateDestroyAPIView):
+    permission_classes = [IsAuthenticated]
+    queryset = Customer.objects.all()
+    serializer_class = CustomerSerializer
+
+# ✅ List All Resources or Create a New Resource
+class ResourceListCreateView(generics.ListCreateAPIView):
+    permission_classes = [IsAuthenticated]
+    queryset = Resource.objects.all()
+    serializer_class = ResourceSerializer
+
+# ✅ Retrieve, Update, or Delete a Specific Resource
+class ResourceDetailView(generics.RetrieveUpdateDestroyAPIView):
+    permission_classes = [IsAuthenticated]
+    queryset = Resource.objects.all()
+    serializer_class = ResourceSerializer
+
+from rest_framework_simplejwt.views import TokenRefreshView
+from rest_framework.response import Response
+import logging
+
+logger = logging.getLogger(__name__)
+
+class CustomTokenRefreshView(TokenRefreshView):
+    def post(self, request, *args, **kwargs):
+        # Extract the refresh token from request
+        refresh_token = request.data.get('refresh')
+        # logger.debug(f"Received refresh token: {refresh_token}")
+        print(f"Received refresh token: {refresh_token}")
+
+        # Call the parent method to process the request
+        response = super().post(request, *args, **kwargs)
+
+        # Log and print the response data
+        # logger.debug(f"Response data: {response.data}")
+        print(f"Response data: {response.data}")
+
+        # return response
+        if response.status_code == 200 and 'access' in response.data:
+            # return Response(
+            #     {
+            #         "message": "Refreshed token",
+            #         "data": response.data,
+            #         "status": response.status_code,
+            #         "access": response.data['access']
+            #     },
+            #     status=status.HTTP_200_OK
+            # )
+            return Response(response.data, status=response.status_code)
+        else:
+            return response
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from .models import Customer  # Import your Customer model
+
+class CustomerTypePercentageAPIView(APIView):
+    def get(self, request):
+        # Get total customers
+        total_customers = Customer.objects.count()
+
+        if total_customers == 0:
+            return Response({"error": "No customers found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Count customers by type
+        inhouse_count = Customer.objects.filter(customer_type="inhouse").count()
+        print(inhouse_count)
+        external_count = Customer.objects.filter(customer_type="External").count()
+        print(external_count)
+
+        # Calculate percentages
+        inhouse_percentage = (inhouse_count / total_customers) * 100
+        external_percentage = (external_count / total_customers) * 100
+
+        # Prepare response data
+        data = [
+            {"name": "Inhouse", "value": round(inhouse_percentage, 2)},
+            {"name": "External", "value": round(external_percentage, 2)}
+        ]
+
+        return Response(data, status=status.HTTP_200_OK)

@@ -10,6 +10,9 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
+# Import dj-database-url at the beginning of the file.
+import dj_database_url
+
 import logging
 from pathlib import Path
 
@@ -28,10 +31,9 @@ import os
 
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'fallback-secret-key')
 
-# SECRET_KEY = 'django-insecure-dz)q4)o6o(8w52bv2yzh0)&d9z!&9kx_y#5)7l6ldec4w(obfu'
-
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# DEBUG = True
+DEBUG = False
 
 ALLOWED_HOSTS = ['*']
 # ALLOWED_HOSTS = ['192.168.251.92','192.168.251.108','127.0.0.1']
@@ -57,10 +59,7 @@ LOGGING = {
     },
 }
 logger = logging.getLogger(__name__)
-# logger = logging.getLogger('SubSync')
-
 logger.info("Logging configuration loaded.")
-
 
 # Application definition
 
@@ -144,25 +143,17 @@ WSGI_APPLICATION = 'SubscriptionManagementSystem.wsgi.application'
 # DATABASES = {
 #     'default': {
 #         'ENGINE': 'django.db.backends.postgresql',
-#         'NAME': os.getenv('DB_NAME', 'SUBSYNC'),
-#         'USER': os.getenv('DB_USER', 'nishida'),
-#         'PASSWORD': os.getenv('DB_PASSWORD', '123456789'),  # ❌ Exposed password!
+#         'NAME': os.getenv('DB_NAME'),
+#         'USER': os.getenv('DB_USER'),
+#         'PASSWORD': os.getenv('DB_PASSWORD'),
 #         'HOST': os.getenv('DB_HOST', 'localhost'),
 #         'PORT': os.getenv('DB_PORT', '5432'),
 #     }
 # }
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv('DB_NAME'),
-        'USER': os.getenv('DB_USER'),
-        'PASSWORD': os.getenv('DB_PASSWORD'),
-        'HOST': os.getenv('DB_HOST', 'localhost'),
-        'PORT': os.getenv('DB_PORT', '5432'),
-    }
+    'default': dj_database_url.config(default=os.getenv('DATABASE_URL'))
 }
-
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
@@ -182,7 +173,6 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-
 # Internationalization
 # https://docs.djangoproject.com/en/5.1/topics/i18n/
 
@@ -195,11 +185,11 @@ USE_I18N = True
 
 USE_TZ = True
 
-
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
@@ -222,15 +212,12 @@ AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.ModelBackend',  # Default Django authentication
 ]
 
-
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 EMAIL_BACKEND='django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST='smtp.gmail.com'
 EMAIL_PORT=587
-# EMAIL_HOST_USER='subsyncproject@gmail.com'
-# EMAIL_HOST_PASSWORD='bdft aqtq dewd ixqu'
 EMAIL_USE_TLS=True
 EMAIL_USE_SSL=False
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
@@ -251,7 +238,5 @@ CELERY_BROKER_URL = 'redis://localhost:6379/0'
 CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
-# CELERY_TIMEZONE = 'Asia/Karachi'
-
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'Asia/Kolkata'  # Match Django's TIME_ZONE

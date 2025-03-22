@@ -50,8 +50,15 @@ def schedule_reminder_tasks(subscription, reminder):
     logger.info(f"Scheduling reminder tasks for reminder ID: {reminder.id}")
 
     try:
+        # Stop scheduling tasks if the subscription is paid
+        # if subscription.payment_status == "Paid":
+        #     logger.info(f"Subscription ID {subscription.id} is paid. No reminders needed.")
+        #     return
+        
         reminder_dates = reminder.calculate_all_reminder_dates(subscription)
         logger.info(f"Calculated reminder dates(in utils.py): {reminder_dates}")
+
+        task_ids = []  # List to store task IDs
 
         for date in reminder_dates:
             logger.info(f"Scheduling task for date: {date} at time: {DEFAULT_RENEWAL_TIME}")
@@ -63,12 +70,15 @@ def schedule_reminder_tasks(subscription, reminder):
             # send_reminder_notification.apply_async(
             #     args=[reminder.id], eta=task_eta
             # )
-            send_reminder_notification.apply_async(
-                args=[reminder.id]
-            )
+            # send_reminder_notification.apply_async(
+            #     args=[reminder.id]
+            # )
+            # Schedule the task and store the task ID
+            task = send_reminder_notification.apply_async(args=[reminder.id])
+            task_ids.append(task.id)
+        
+        reminder.scheduled_task_id = ",".join(task_ids)
+        reminder.save()
 
     except Exception as e:
         logger.error(f"Error scheduling reminder tasks: {e}")
-
-
-

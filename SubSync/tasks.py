@@ -79,6 +79,11 @@ def send_reminder_notification(reminder_id):
             logger.error(f"No subscription found for reminder ID: {reminder_id}")
             return
         
+        # Stop reminders if the subscription is paid
+        # if subscription.payment_status == "Paid":
+        #     logger.info(f"Subscription ID {subscription.id} is paid. Stopping reminders.")
+        #     return
+        
         logger.info(f"Sending reminder for reminder ID: {reminder_id}")
 
         if subscription.status == "Expired" or subscription.payment_status == "Unpaid":
@@ -93,7 +98,7 @@ def send_reminder_notification(reminder_id):
             message = "This is an overdue reminder for your subscription ."
 
         else:
-            subject = f"Reminder: {reminder.reminder_type} for "
+            subject = f"Reminder: {reminder.reminder_type} for active subscription "
             message = reminder.custom_message or "This is a reminder for your subscription ."
         recipients = reminder.recipients.split(",") if reminder.recipients else []
         logger.info(f"Recipients: {recipients}")

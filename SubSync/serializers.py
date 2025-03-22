@@ -1,7 +1,7 @@
 from rest_framework import serializers
 # from django.contrib.auth import get_user_model
 # User = get_user_model()
-from .models import AirConditioner, Computer, HardwareServers, HardwareService, NetworkDevice, Notification, PortableDevice, Printer, Provider, Purchase, Resource, Scanner, Subscription, User, SoftwareSubscriptions, Utilities, Domain, Servers, Hardware, Warranty
+from .models import AirConditioner, Computer, Customer, HardwareServers, HardwareService, NetworkDevice, Notification, PortableDevice, Printer, Provider, Purchase, Resource, Scanner, Subscription, User, SoftwareSubscriptions, Utilities, Domain, Servers, Hardware, Warranty
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -106,20 +106,44 @@ class SoftwareSubscriptionSerializer(serializers.ModelSerializer):
         model = SoftwareSubscriptions
         fields = '__all__'
 
+    def validate_software_id(self, value):
+        """ Ensure software_id is unique """
+        if SoftwareSubscriptions.objects.filter(software_id=value).exists():
+            raise serializers.ValidationError("A software subscription with this ID already exists.")
+        return value
+
 class UtilitySerializer(serializers.ModelSerializer):
     class Meta:
         model = Utilities
         fields = '__all__'
+
+    def validate_consumer_no(self, value):
+        """ Ensure consumer_no is unique """
+        if Utilities.objects.filter(consumer_no=value).exists():
+            raise serializers.ValidationError("This consumer number is already registered.")
+        return value
 
 class DomainSerializer(serializers.ModelSerializer):
     class Meta:
         model = Domain
         fields = '__all__'
 
+    def validate_domain_name(self, value):
+        """ Ensure domain_name is unique """
+        if Domain.objects.filter(domain_name=value).exists():
+            raise serializers.ValidationError("This domain is already registered.")
+        return value
+
 class ServerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Servers
         fields = '__all__'
+
+    def validate_server_name(self, value):
+        """ Ensure server_name is unique """
+        if Servers.objects.filter(server_name=value).exists():
+            raise serializers.ValidationError("This server name is already in use.")
+        return value
 
 # class SubscriptionDetailSerializer(serializers.ModelSerializer):
 #     # provider = serializers.PrimaryKeyRelatedField(queryset=Provider.objects.all())
@@ -325,41 +349,71 @@ class ComputerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Computer
         fields = '__all__'
+        extra_kwargs = {
+            'hardware': {'required': False}  # Allow hardware to be assigned later
+        }
 
 class PortableDeviceSerializer(serializers.ModelSerializer):
     class Meta:
         model = PortableDevice
         fields = '__all__'
+        extra_kwargs = {
+            'hardware': {'required': False}  # Allow hardware to be assigned later
+        }
 
 class NetworkDeviceSerializer(serializers.ModelSerializer):
     class Meta:
         model = NetworkDevice
         fields = '__all__'
+        fields = '__all__'
+        extra_kwargs = {
+            'hardware': {'required': False}  # Allow hardware to be assigned later
+        }
 
 class AirConditionerSerializer(serializers.ModelSerializer):
     class Meta:
         model = AirConditioner
         fields = '__all__'
+        fields = '__all__'
+        extra_kwargs = {
+            'hardware': {'required': False}  # Allow hardware to be assigned later
+        }
 
 class ServerSerializer(serializers.ModelSerializer):
     class Meta:
         model = HardwareServers
         fields = '__all__'
+        fields = '__all__'
+        extra_kwargs = {
+            'hardware': {'required': False}  # Allow hardware to be assigned later
+        }
 
 class PrinterSerializer(serializers.ModelSerializer):
     class Meta:
         model = Printer
         fields = '__all__'
+        fields = '__all__'
+        extra_kwargs = {
+            'hardware': {'required': False}  # Allow hardware to be assigned later
+        }
 
 class ScannerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Scanner
         fields = '__all__'
+        fields = '__all__'
+        extra_kwargs = {
+            'hardware': {'required': False}  # Allow hardware to be assigned later
+        }
+
+import logging
+logger = logging.getLogger(__name__)
 
 class HardwareSerializer(serializers.ModelSerializer):
     purchase = PurchaseSerializer(required=False)
     warranty = WarrantySerializer(required=False)
     services = HardwareServiceSerializer(many=True, required=False)
+
     computer = ComputerSerializer(required=False)
     portable_device = PortableDeviceSerializer(required=False)
     network_device = NetworkDeviceSerializer(required=False)
@@ -373,6 +427,7 @@ class HardwareSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
     def create(self, validated_data):
+        logger.info("Validated data before saving: %s", validated_data)
         # Extract nested data
         purchase_data = validated_data.pop('purchase', None)
         warranty_data = validated_data.pop('warranty', None)
@@ -395,10 +450,13 @@ class HardwareSerializer(serializers.ModelSerializer):
             Warranty.objects.create(hardware=hardware, **warranty_data)
         for service_data in services_data:
             HardwareService.objects.create(hardware=hardware, **service_data)
+
         if computer_data:
-            Computer.objects.create(hardware=hardware, **computer_data)
+            computer_data["hardware"] = hardware
+            Computer.objects.create(**computer_data)
         if portable_device_data:
-            PortableDevice.objects.create(hardware=hardware, **portable_device_data)
+            portable_device_data["hardware"] = hardware  # Explicitly set hardware reference
+            PortableDevice.objects.create(**portable_device_data)
         if network_device_data:
             NetworkDevice.objects.create(hardware=hardware, **network_device_data)
         if air_conditioner_data:
@@ -515,12 +573,201 @@ class ResourceNameSerializer(serializers.ModelSerializer):
         model = Resource
         fields = ['resource_name']
 
+
 class ResourceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Resource
         fields = '__all__' 
+        extra_kwargs = {
+            'server': {'required': False} ,
+             'user': {'required': False} 
+        }
+        
+    def to_internal_value(self, data):
+        # Mapping frontend fields to backend fields
+        field_mapping = {
+            "billing_cycle": "billing_cycle",
+            "hosting_location": "server",
+            "hosting_type": "hosting_type",
+            "last_updated_date": "last_updated_date",
+            "provisioned_date": "provisioned_date",
+            "resource_cost": "resource_cost",
+            "resource_name": "resource_name",
+            "resource_type": "resource_type",
+            "storage_capacity": "storage_capacity",
+            # "hosting_location_name": "hosting_location_name",
+            # "user": "user"
+        }
+
+        # Convert frontend field names to backend field names
+        converted_data = {backend_key: data.get(frontend_key) for frontend_key, backend_key in field_mapping.items() if frontend_key in data}
+
+        return super().to_internal_value(converted_data)
+    
+    def validate(self, data):
+        """
+        Custom validation to set user and map hosting_location_name to server ID.
+        """
+        request = self.context.get('request')
+
+        # Set the user from request
+        if request and request.user:
+            data["user"] = request.user
+            
+        data["status"] = "Active" 
+        
+        # Convert hosting_location_name to server ID
+        hosting_location_name = self.initial_data.get("hosting_location_name")  # Frontend field
+        if hosting_location_name:
+            try:
+                server = Servers.objects.get(name=hosting_location_name)
+                data["server"] = server
+            except Servers.DoesNotExist:
+                raise serializers.ValidationError({"hosting_location": "Invalid server name."})
+
+        return data
 
 class NotificationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Notification
         fields = ["id", "subscription", "message", "is_read", "created_at"]
+
+class CustomerSerializer(serializers.ModelSerializer):
+    customer_phone = serializers.CharField(source='contact_phone')  # Mapping JSON key to model field
+    customer_email = serializers.EmailField(source='email')  # Mapping JSON key to model field
+    billingCycle = serializers.CharField(source='billing_cycle')
+    lastPaymentDate = serializers.DateField(source='last_payment_date')
+    startDate = serializers.DateField(source='start_date')
+    endDate = serializers.DateField(source='end_date')
+    paymentMethod = serializers.CharField(source='payment_method')
+    cost = serializers.DecimalField(max_digits=10, decimal_places=2)
+    # Allow assigning multiple resource IDs while creating a customer
+    resource_ids = serializers.ListField(child=serializers.IntegerField(), write_only=True, required=False)
+
+    class Meta:
+        model = Customer
+        # fields = [
+        #     'id', 'customer_name', 'contact_phone', 'email', 'status', 'customer_type', 
+        #     'payment_method', 'last_payment_date', 'start_date', 'end_date', 
+        #     'billing_cycle', 'cost', 'user', 'resource_ids'
+        # ]
+        fields = [
+            'id', 'customer_name', 'customer_phone', 'customer_email', 'status', 'customer_type', 
+            'paymentMethod', 'lastPaymentDate', 'startDate', 'endDate', 
+            'billingCycle', 'cost', 'user', 'resource_ids'
+        ]
+
+    def create(self, validated_data):
+        resource_ids = validated_data.pop('resource_ids', [])  # Extract resource IDs if provided
+
+        print(f"📌 Creating customer with data: {validated_data}")
+
+        customer = Customer.objects.create(**validated_data)
+
+        # Assign resources to this customer
+        # Resource.objects.filter(id__in=resource_ids).update(customer=customer)
+        if resource_ids:
+            print(f"🔗 Assigning resources {resource_ids} to customer {customer.id}")  
+            Resource.objects.filter(id__in=resource_ids).update(customer=customer)
+
+        return customer
+    
+# class ServerUsageSerializer(serializers.ModelSerializer):
+#     used = serializers.SerializerMethodField()
+#     total = serializers.SerializerMethodField()
+#     percentage = serializers.SerializerMethodField()
+
+#     class Meta:
+#         model = Servers
+#         fields = ["server_name", "used", "total", "percentage"]
+
+#     def get_used(self, obj):
+#         """
+#         Calculate total used capacity by summing up resource storage capacities linked to this server.
+#         """
+#         resources = obj.server_resources.all()  # Fetch all resources linked to this server
+#         print(f"resources {resources}")
+#         total_used = 0
+
+#         for resource in resources:
+#             if resource.storage_capacity:
+#                 try:
+#                     total_used += int(resource.storage_capacity)  # Convert storage_capacity to int
+#                 except ValueError:
+#                     pass  # Ignore if the value is not a number
+        
+#         return total_used
+
+#     def get_total(self, obj):
+#         """
+#         Get the total server capacity.
+#         """
+#         try:
+#             return int(obj.server_capacity)  # Ensure it's an integer
+#         except ValueError:
+#             return 0
+
+#     def get_percentage(self, obj):
+#         """
+#         Calculate the usage percentage.
+#         """
+#         total = self.get_total(obj)
+#         used = self.get_used(obj)
+#         return round((used / total) * 100, 2) if total > 0 else 0
+
+import re  # Regular Expressions for extracting numbers
+
+class ServerUsageSerializer(serializers.ModelSerializer):
+    used = serializers.SerializerMethodField()
+    total = serializers.SerializerMethodField()
+    percentage = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Servers
+        fields = ["server_name", "used", "total", "percentage"]
+
+    def get_used(self, obj):
+        """Calculate total used capacity from related resources."""
+        resources = obj.server_resources.all()
+        print(f"Debug: Server {obj.server_name} -> Resources: {resources}")
+
+        total_used = 0
+        for resource in resources:
+            if resource.storage_capacity:
+                try:
+                    # Extract numeric value (e.g., "8TB" -> 8, "500GB" -> 500)
+                    match = re.search(r'(\d+)', resource.storage_capacity)
+                    if match:
+                        value = int(match.group(1))  # Convert to integer
+                        if "TB" in resource.storage_capacity.upper():
+                            value *= 1000  # Convert TB to GB
+                        total_used += value  # Add to total used
+                    else:
+                        print(f"Warning: Could not parse storage_capacity {resource.storage_capacity}")
+                except ValueError:
+                    print(f"Warning: Invalid storage_capacity {resource.storage_capacity}")
+                    pass  
+        
+        return total_used
+
+    def get_total(self, obj):
+        """Extract and sanitize server_capacity."""
+        try:
+            # Extract numeric value (e.g., "2TB" -> 2000, "500GB" -> 500)
+            match = re.search(r'(\d+)', obj.server_capacity)
+            if match:
+                capacity_value = int(match.group(1))  
+                if "TB" in obj.server_capacity.upper():
+                    capacity_value *= 1000  # Convert TB to GB
+                return capacity_value
+            return 0
+        except Exception as e:
+            print(f"Error parsing server_capacity {obj.server_capacity}: {e}")
+            return 0
+
+    def get_percentage(self, obj):
+        """Calculate the percentage usage safely."""
+        total = self.get_total(obj)
+        used = self.get_used(obj)
+        percentage = round((used / total) * 100, 2) if total > 0 else 0
+        return min(percentage, 100)

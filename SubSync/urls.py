@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import ActiveSubscriptionsView, AddHardwareAPIView, DashboardOverview, DashboardOverviewAll, ExpiredSubscriptionsView, HardwareSummaryView, ListHardwareView, LoginAPIView, ForgotPasswordAPIView, LogoutView, MarkNotificationAsReadView, NotificationListView, ProviderListView, ReminderAPIView, ResetPasswordAPIView, CreateUserAPIView, ResourceCreateView, ResourceNameListView, RetrieveUpdateHardwareView, SubscriptionCategoryDistributionView, SubscriptionChoicesView, SubscriptionCountView, SubscriptionCreateView, ProviderCreateView,ChangePasswordView, SubscriptionListView, SubscriptionDetailView, SubscriptionMonthlyAnalysisView, UpcomingHardwareAPIView, UserProfileView, WarningSubscriptionsView, hardware_report, spending_report
+from .views import ActiveSubscriptionsView, AddHardwareAPIView, CustomTokenRefreshView, CustomerAPIView, CustomerDetailView, CustomerListView, CustomerTypePercentageAPIView, DashboardOverview, DashboardOverviewAll, ExpiredSubscriptionsView, HardwareSummaryView, ListHardwareView, LoginAPIView, ForgotPasswordAPIView, LogoutView, MarkNotificationAsReadView, NotificationListView, ProviderListView, ReminderAPIView, ResetPasswordAPIView, CreateUserAPIView, ResourceCreateView, ResourceDetailView, ResourceListCreateView, ResourceNameListView, RetrieveUpdateHardwareView, ServerListByHostingTypeAPIView, ServerUsageView, SubscriptionCategoryDistributionView, SubscriptionChoicesView, SubscriptionCountView, SubscriptionCreateView, ProviderCreateView,ChangePasswordView, SubscriptionListView, SubscriptionDetailView, SubscriptionMonthlyAnalysisView, SubscriptionReportView, UpcomingHardwareAPIView, UserProfileView, WarningSubscriptionsView, hardware_report, spending_report
 from .views import SubscriptionDetailUpdateView, ExpenditureAnalysisView
 from rest_framework_simplejwt import views as jwt_views
 
@@ -17,7 +17,7 @@ urlpatterns = [
 
     path("change-password/", ChangePasswordView.as_view(), name="change-password"),
 
-    path("subscriptions/expenditure/", ExpenditureAnalysisView.as_view(), name="expenditure-analysis"),
+    # path("subscriptions/expenditure/", ExpenditureAnalysisView.as_view(), name="expenditure-analysis"),
 
     path('hardware/add/', AddHardwareAPIView.as_view(), name='add-hardware'),
     path('hardware/', ListHardwareView.as_view(), name='list-hardware'),
@@ -53,10 +53,25 @@ urlpatterns = [
     path('resources/add/', ResourceCreateView.as_view(), name='resource-add'),
     
     # path('token/', jwt_views.TokenObtainPairView.as_view(), name = 'token'),
-    path('token/refresh/', jwt_views.TokenRefreshView.as_view(), name='token_refresh'),
+    # path('token/refresh/', jwt_views.TokenRefreshView.as_view(), name='token_refresh'),
+    path('token/refresh/', CustomTokenRefreshView.as_view(), name='token_refresh'),
     path('dashboard/', DashboardOverviewAll.as_view(), name='all'),
 
     path("notifications/", NotificationListView.as_view(), name="notification-list"),
     path("notifications/<int:pk>/", MarkNotificationAsReadView.as_view(), name="mark-notification-read"),
+
+    path('servers-by-hosting-type/', ServerListByHostingTypeAPIView.as_view(), name='get_servers_by_hosting_type'),
+    path('add-customer/', CustomerAPIView.as_view(), name='add-customer'),
+    path("server-usage/", ServerUsageView.as_view(), name="server-usage"),
+    path('customers/', CustomerListView.as_view(), name='customer-list'),
+    path('customers/<int:pk>/', CustomerDetailView.as_view(), name='customer-detail'),
+    path('resources/', ResourceListCreateView.as_view(), name='resource-list-create'),
+    path('resources/<int:pk>/', ResourceDetailView.as_view(), name='resource-detail'),
+    path('expenditure-analysis/', ExpenditureAnalysisView.as_view(), name='expenditure-analysis'),
+    
+    path('subscription-report/', SubscriptionReportView.as_view(), name='subscription-report'),
+    path('customer-type-percentage/', CustomerTypePercentageAPIView.as_view(), name='customer-type-percentage'),
+
+
 
 ]

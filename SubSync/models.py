@@ -35,7 +35,7 @@ class Provider(models.Model):
 class Subscription(models.Model):
 
     CATEGORY_CHOICES = ['Software', 'Billing', 'Server', 'Domain']
-    PAYMENT_STATUS_CHOICES = ['Paid',  'Unpaid']
+    PAYMENT_STATUS_CHOICES = ['Paid',  'Unpaid','pending']
     STATUS_CHOICES = ['Active', 'Expired', 'Canceled']
     subscription_category = models.CharField(
         max_length=50, choices=[(c, c) for c in CATEGORY_CHOICES]
@@ -151,11 +151,20 @@ class Subscription(models.Model):
 class SoftwareSubscriptions(models.Model):
     subscription = models.OneToOneField(Subscription, on_delete=models.CASCADE, related_name='software_detail', unique=True)
 
-    software_id =models.CharField()
+    software_id =models.CharField(unique=True)
     software_name = models.CharField(max_length=255)
     version = models.CharField(max_length=50, blank=True, null=True)
     # features = models.TextField(blank=True, null=True)
     no_of_users = models.PositiveIntegerField(default=1)  # Ensures no negative users
+
+    def clean(self):
+        """ Custom validation to prevent duplicate software_id """
+        if SoftwareSubscriptions.objects.filter(software_id=self.software_id).exclude(id=self.id).exists():
+            raise ValidationError(f"A software subscription with ID '{self.software_id}' already exists.")
+        
+    def save(self, *args, **kwargs):
+        self.clean()  # Run validation before saving
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"Software Details for {self.subscription.id}"
@@ -170,9 +179,18 @@ class Utilities(models.Model):
     ('Prepaid', 'Prepaid'),
     ('Postpaid', 'Postpaid'),
     ]
-    consumer_no =models.IntegerField()
+    consumer_no =models.IntegerField(unique=True)
     utility_name= models.CharField(max_length=255)
     utility_type = models.CharField(max_length=50, choices=UTILITY_TYPE_CHOICES)
+
+    def clean(self):
+        """ Custom validation to prevent duplicate consumer_no """
+        if Utilities.objects.filter(consumer_no=self.consumer_no).exclude(id=self.id).exists():
+            raise ValidationError(f"A utility with consumer number '{self.consumer_no}' already exists.")
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
     
 class Domain(models.Model):
     DOMAIN_TYPE_CHOICES = [
@@ -182,11 +200,9 @@ class Domain(models.Model):
 
     subscription = models.OneToOneField(Subscription, on_delete=models.CASCADE, related_name="domain", unique=True)
 
-    domain_id =models.IntegerField()
+    domain_id =models.IntegerField(unique=True)
     domain_name = models.CharField(max_length=255, unique=True, help_text="Fully Qualified Domain Name (FQDN)")
-    domain_type = models.CharField(max_length=255,
-                                    # choices=DOMAIN_TYPE_CHOICES
-                                    )
+    domain_type = models.CharField(max_length=255)
     
     ssl_certification = models.BooleanField(default=False, help_text="Indicates if SSL is enabled for the domain")
     ssl_expiry_date = models.DateField(blank=True, null=True, help_text="SSL certificate expiration date")
@@ -205,21 +221,39 @@ class Domain(models.Model):
     #     help_text="Current status of domain transfer"
     # )
 
+    def clean(self):
+        """ Custom validation to prevent duplicate domain_name """
+        if Domain.objects.filter(domain_name=self.domain_name).exclude(id=self.id).exists():
+            raise ValidationError(f"The domain '{self.domain_name}' is already registered.")
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return self.domain_name
 
 class Servers(models.Model):
-    SERVER_TYPE_CHOICES = [
-        ('In-house', 'In-house'),
-        ('External', 'External'),
-    ]
+    # SERVER_TYPE_CHOICES = [
+    #     ('In-house', 'In-house'),
+    #     ('External', 'External'),
+    # ]
 
     subscription = models.OneToOneField(Subscription, on_delete=models.CASCADE, related_name="server", unique=True)
     
-    server_name = models.CharField(max_length=255)
-    server_type = models.CharField(max_length=50, choices=SERVER_TYPE_CHOICES)
+    server_name = models.CharField(max_length=255,unique=True)
+    server_type = models.CharField(max_length=50)
     # server_capacity = models.PositiveIntegerField(default=0, help_text="Total resource capacity (e.g., CPU, RAM, storage).")
     server_capacity= models.CharField(max_length=255)
+
+    def clean(self):
+        """ Custom validation to prevent duplicate server_name """
+        if Servers.objects.filter(server_name=self.server_name).exclude(id=self.id).exists():
+            raise ValidationError(f"The server '{self.server_name}' already exists.")
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.server_name
@@ -233,16 +267,16 @@ class Hardware(models.Model):
         ('Tablet', 'Tablet'),
         ('Network Device', 'Network Device'),
         ('Air Conditioner', 'Air Conditioner'),
-        ('Server', 'Server'),
+        ('on-premise server', 'on-premise server'),
         ('Printer', 'Printer'),
         ('Scanner', 'Scanner'),
         ('Other', 'Other'),
     ]
 
     STATUS_CHOICES = [
-        ('active', 'Active'),
-        ('inactive', 'Inactive'),
-        ('maintenance', 'Maintenance')
+        ('Active', 'Active'),
+        ('Inactive', 'Inactive'),
+        ('Maintenance', 'Maintenance')
     ]
 
     # hardware_name = models.CharField(max_length=100)
@@ -262,7 +296,7 @@ class Hardware(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='hardware')
 
     def __str__(self):
-        return f"{self.hardware_name} ({self.serial_number})"
+        return f"{self.hardware_type} ({self.serial_number})"
 
     class Meta:
         db_table = 'hardware'
@@ -298,7 +332,7 @@ class HardwareService(models.Model):
     free_service_until = models.DateField(null=True, blank=True)
     service_cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     service_provider = models.CharField(max_length=100, null=True, blank=True)
-    service_notes = models.TextField(null=True, blank=True)
+    # service_notes = models.TextField(null=True, blank=True)
 
     def __str__(self):
         return f"Service for {self.hardware} on {self.last_service_date}"
@@ -351,6 +385,8 @@ class AirConditioner(models.Model):
     
 class HardwareServers(models.Model):
     hardware = models.OneToOneField(Hardware, on_delete=models.CASCADE, related_name='server')
+    
+    hardware_server_name = models.CharField(max_length=100)
     cpu = models.CharField(max_length=100)
     ram = models.CharField(max_length=100)
     storage_configuration = models.CharField(max_length=100)
@@ -376,7 +412,6 @@ class Scanner(models.Model):
 
     def __str__(self):
         return f"Scanner: {self.hardware}"
-    
 
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
@@ -407,20 +442,20 @@ class Reminder(models.Model):
         # ('all', 'All'),
         ('both', 'Both'),
     ]
-    SUBSCRIPTION_CYCLE_CHOICES = [
-        ('weekly', 'Weekly'),
-        ('monthly', 'Monthly'),
-        ('quarterly', 'Quarterly'),
-        ('semi-annual', 'Semi-Annual'),
-        ('annual', 'Annual'),
-        ('biennial', 'Biennial'),
-        ('triennial', 'Triennial'),
-    ]
+    # SUBSCRIPTION_CYCLE_CHOICES = [
+    #     ('weekly', 'Weekly'),
+    #     ('monthly', 'Monthly'),
+    #     ('quarterly', 'Quarterly'),
+    #     ('semi-annual', 'Semi-Annual'),
+    #     ('annual', 'Annual'),
+    #     ('biennial', 'Biennial'),
+    #     ('triennial', 'Triennial'),
+    # ]
 
-    subscription_cycle = models.CharField(
-        max_length=20, choices=SUBSCRIPTION_CYCLE_CHOICES, default='monthly',
-        help_text="Defines the frequency of the subscription."
-    )
+    # subscription_cycle = models.CharField(
+    #     max_length=20, choices=SUBSCRIPTION_CYCLE_CHOICES, default='monthly',
+    #     help_text="Defines the frequency of the subscription."
+    # )
     reminder_days_before = models.IntegerField(
         blank=True, null=True, validators=[MinValueValidator(1)],
         help_text="For weekly/monthly cycles: How many days before to receive a reminder?"
@@ -455,6 +490,7 @@ class Reminder(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     reminder_type = models.CharField(max_length=50, choices=REMINDER_TYPE_CHOICES, default='renewal')
+    scheduled_task_id = models.CharField(max_length=255, blank=True, null=True)
     # reminder_time = models.TimeField(
                                     # default="09:00:00"
                                     # default="15:15:00",
@@ -474,8 +510,13 @@ class Reminder(models.Model):
         today = timezone.now().date()
         reminder_dates = []
 
+        # Stop reminders if the subscription is paid
+        if subscription.payment_status == "Paid":
+            logger.info(f"Subscription ID {subscription.id} is paid. No reminders needed.")
+            return reminder_dates
+
         # For weekly/monthly cycles
-        if self.subscription_cycle in ['weekly', 'monthly']:
+        if subscription.billing_cycle in ['weekly', 'monthly']:
             if self.reminder_days_before:
                 start_date = subscription.next_payment_date - timedelta(days=int(self.reminder_days_before))
                 current_date = start_date
@@ -485,7 +526,7 @@ class Reminder(models.Model):
                     current_date += timedelta(days=1)
 
         # For long-term cycles
-        elif self.subscription_cycle in ['quarterly', 'semi-annual', 'annual', 'biennial', 'triennial']:
+        elif subscription.billing_cycle in ['quarterly', 'semi-annual', 'annual', 'biennial', 'triennial']:
             if self.reminder_months_before and self.reminder_day_of_month:
                 start_date = max(
                     subscription.next_payment_date - relativedelta(months=self.reminder_months_before),
@@ -516,14 +557,12 @@ class Reminder(models.Model):
                 reminder_dates.append(overdue_reminder_date)
                 overdue_reminder_date += timedelta(days=3)  # Overdue reminders every 3 days (adjustable)
 
-
         logger.info(f"Generated Reminder Dates(in models.py): {reminder_dates}")
         return reminder_dates
 
     def __str__(self):
-        return f"Reminder for {self.subscription_cycle} cycle - {self.reminder_status}"
+        return f"Reminder of type {self.reminder_type} - {self.reminder_status}"
     
-
 # Separate Linking Tables
 class ReminderSubscription(models.Model):
     reminder = models.ForeignKey(Reminder, on_delete=models.CASCADE, related_name='subscription_reminder')
@@ -545,18 +584,28 @@ class Customer(models.Model):
     # ]
     STATUS_CHOICES = ['Active', 'Inactive']
 
-    CUSTOMER_TYPE_CHOICES = [
-        ('inhouse', 'In-house'),
-        ('external', 'External'),
-    ]
+    # CUSTOMER_TYPE_CHOICES = [
+    #     ('Inhouse', 'Inhouse'),
+    #     ('External', 'External'),
+    # ]
     
     customer_name = models.CharField(max_length=100)
     contact_phone = models.CharField(max_length=20)
     email = models.EmailField()
     status = models.CharField(max_length=20, choices=[(s, s) for s in STATUS_CHOICES])
+    customer_type = models.CharField(max_length=50)
+    payment_method= models.CharField(max_length=20)
+    last_payment_date = models.DateField(null=True, blank=True)
+    start_date = models.DateField()
+    end_date = models.DateField()
+    billing_cycle = models.CharField(max_length=20)
+    cost= models.DecimalField(max_digits=10, decimal_places=2)
+    # next_payment_date = models.DateField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    customer_type = models.CharField(max_length=50, choices=CUSTOMER_TYPE_CHOICES)
+    is_deleted = models.BooleanField(default=False)  # Soft delete flag
+    deleted_at = models.DateTimeField(null=True, blank=True)  # Store delete time
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='customers')
 
@@ -570,56 +619,102 @@ class Customer(models.Model):
         ordering = ['-created_at']
 
 class Resource(models.Model):
-
-    RESOURCE_TYPE_CHOICES = [
-        ('database', 'Database'),
-        ('compute', 'Compute'),
-        ('storage', 'Storage'),
-        ('network', 'Network'),
-        ('website', 'Website')
-    ]
+    # RESOURCE_TYPE_CHOICES = [
+    #     ('database', 'Database'),
+    #     ('compute', 'Compute'),
+    #     ('storage', 'Storage'),
+    #     ('network', 'Network'),
+    #     ('website', 'Website'),
+    #     ('web_and_app_hosting', 'Web and App Hosting')  # Added to match frontend
+    # ]
     STATUS_CHOICES = [
-        ('available', 'Available'),
-        ('in_use', 'In Use'),
-        ('maintenance', 'Maintenance')
+        # ('available', 'Available'),
+        # ('in_use', 'In Use'),
+        # ('maintenance', 'Maintenance'),
+        ('Active', 'Active'),  # Added based on frontend data
+        ('Inactive', 'Inactive'),
+        # ('pending', 'Pending'),
     ]
-    
+    BILLING_CYCLE_CHOICES = [
+        ('monthly', 'Monthly'),
+        ('quarterly', 'Quarterly'),
+        ('biannual', 'Biannual'),
+        ('annual', 'Annual'),
+    ]
+
     resource_name = models.CharField(max_length=100)
-    resource_type = models.CharField(max_length=50, choices=RESOURCE_TYPE_CHOICES)
+    resource_type = models.CharField(max_length=50)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES)
-    capacity = models.CharField(
-        max_length=100,
-        help_text="Specify resource capacity (e.g., 4 vCPUs, 100 GB, 1 TB bandwidth)."
-    )
+    billing_cycle = models.CharField(max_length=20, choices=BILLING_CYCLE_CHOICES, default="monthly")
+    resource_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    storage_capacity = models.CharField(max_length=100, blank=True, null=True)
+    provisioned_date = models.DateField(null=True, blank=True)
+    next_payment_date = models.DateField(null=True, blank=True)
+    last_updated_date = models.DateField(auto_now=True)
+
+    hosting_type = models.CharField(max_length=100, blank=True, null=True)
+    # hosting_location_name= models.CharField(max_length=100, blank=True, null=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    server= models.ForeignKey(Servers, on_delete=models.CASCADE, related_name='server_resources')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='user_resources')
+    server = models.ForeignKey(Servers, on_delete=models.CASCADE, related_name='server_resources')
+    customer = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True, blank=True, related_name='resources')
+
+    def calculate_next_payment_date(self):
+        """Calculate the next payment date based on !provisioned_date //last_payment_date and billing_cycle."""
+        if not self.provisioned_date:
+            print("provisioned date not set")
+            return None
+
+        cycle_mapping = {
+            # 'weekly': relativedelta(weeks=1),
+            'monthly': relativedelta(months=1),
+            'quarterly': relativedelta(months=3),
+            # 'semi-annual': relativedelta(months=6),
+            'annual': relativedelta(years=1),
+            # 'biennial': relativedelta(years=2),
+            # 'triennial': relativedelta(years=3),
+        }
+
+        # last_payement_date = self.start_date?
+        # next_payment_date = self.end_date?
+
+        # If next_payment_date is not set, calculate it from !start_date//last_payment_date
+        if not self.next_payment_date:
+            self.next_payment_date = self.provisioned_date + cycle_mapping.get(self.billing_cycle, relativedelta(days=0))
+        else:
+            # If next_payment_date is set, calculate the next payment date based on the billing cycle
+            self.next_payment_date = self.next_payment_date + cycle_mapping.get(self.billing_cycle, relativedelta(days=0))
+
+        print(f"Next Payment Date: {self.next_payment_date}")
+        return self.next_payment_date
     
-    user= models.ForeignKey(User, on_delete=models.CASCADE, related_name='user_resources')
-    customers = models.ManyToManyField(Customer, through='CustomerResource', related_name='customer_resources')
+    def save(self, *args, **kwargs):
+        """Override save method to update status , payment status,and next payment date before saving."""
+        
+        if not self.next_payment_date:
+            self.next_payment_date = self.calculate_next_payment_date()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.resource_name
 
-    class Meta:
-        db_table = 'resource'
+# class CustomerResource(models.Model):
+#     PAYMENT_STATUS_CHOICES = [
+#         ('paid', 'Paid'),
+#         ('unpaid', 'Unpaid'),
+#         ('pending', 'Pending'),
+#     ]
 
-class CustomerResource(models.Model):
-    PAYMENT_STATUS_CHOICES = [
-        ('paid', 'Paid'),
-        ('unpaid', 'Unpaid'),
-        ('pending', 'Pending'),
-    ]
+#     customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name='customer')
+#     resource = models.ForeignKey(Resource, on_delete=models.CASCADE, related_name='resources')
 
-    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name='customer')
-    resource = models.ForeignKey(Resource, on_delete=models.CASCADE, related_name='resources')
-
-    total_cost = models.DecimalField(max_digits=10, decimal_places=2, help_text="Total cost of the resource usage.")
-    usage_start_date = models.DateTimeField(help_text="Start date of resource usage.")
-    usage_end_date = models.DateTimeField(help_text="End date of resource usage.")
-    payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, default='pending')
-
+#     total_cost = models.DecimalField(max_digits=10, decimal_places=2, help_text="Total cost of the resource usage.")
+#     usage_start_date = models.DateTimeField(help_text="Start date of resource usage.")
+#     usage_end_date = models.DateTimeField(help_text="End date of resource usage.")
+#     payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, default='pending')
 
 class Notification(models.Model):
     subscription = models.ForeignKey("SubSync.Subscription", on_delete=models.CASCADE, related_name="notifications")
