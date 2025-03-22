@@ -582,27 +582,6 @@ class ResourceSerializer(serializers.ModelSerializer):
             'server': {'required': False} ,
              'user': {'required': False} 
         }
-        
-    def to_internal_value(self, data):
-        # Mapping frontend fields to backend fields
-        field_mapping = {
-            "billing_cycle": "billing_cycle",
-            "hosting_location": "server",
-            "hosting_type": "hosting_type",
-            "last_updated_date": "last_updated_date",
-            "provisioned_date": "provisioned_date",
-            "resource_cost": "resource_cost",
-            "resource_name": "resource_name",
-            "resource_type": "resource_type",
-            "storage_capacity": "storage_capacity",
-            # "hosting_location_name": "hosting_location_name",
-            # "user": "user"
-        }
-
-        # Convert frontend field names to backend field names
-        converted_data = {backend_key: data.get(frontend_key) for frontend_key, backend_key in field_mapping.items() if frontend_key in data}
-
-        return super().to_internal_value(converted_data)
     
     def validate(self, data):
         """
@@ -626,6 +605,36 @@ class ResourceSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({"hosting_location": "Invalid server name."})
 
         return data
+    
+    def to_internal_value(self, data):
+        # Mapping frontend fields to backend fields
+        field_mapping = {
+            "billing_cycle": "billing_cycle",
+            "hosting_location": "server",
+            "hosting_type": "hosting_type",
+            "last_updated_date": "last_updated_date",
+            "provisioned_date": "provisioned_date",
+            "resource_cost": "resource_cost",
+            "resource_name": "resource_name",
+            "resource_type": "resource_type",
+            "storage_capacity": "storage_capacity",
+            # "hosting_location_name": "hosting_location_name",
+            # "user": "user"
+        }
+
+        # Convert frontend field names to backend field names
+        converted_data = {backend_key: data.get(frontend_key) for frontend_key, backend_key in field_mapping.items() if frontend_key in data}
+
+        # Convert hosting_location (name) to server (ID)
+        hosting_location_name = data.get("hosting_location")
+        if hosting_location_name:
+            try:
+                server = Servers.objects.get(server_name=hosting_location_name)  # Convert name to ID
+                converted_data["server"] = server.id
+            except Servers.DoesNotExist:
+                raise serializers.ValidationError({"server": "Invalid server name."})
+
+            return super().to_internal_value(converted_data)
 
 class NotificationSerializer(serializers.ModelSerializer):
     class Meta:
@@ -644,6 +653,9 @@ class CustomerSerializer(serializers.ModelSerializer):
     # Allow assigning multiple resource IDs while creating a customer
     resource_ids = serializers.ListField(child=serializers.IntegerField(), write_only=True, required=False)
 
+    # List of resources connected to this customer
+    resources = ResourceSerializer(many=True, read_only=True) 
+
     class Meta:
         model = Customer
         # fields = [
@@ -653,8 +665,7 @@ class CustomerSerializer(serializers.ModelSerializer):
         # ]
         fields = [
             'id', 'customer_name', 'customer_phone', 'customer_email', 'status', 'customer_type', 
-            'paymentMethod', 'lastPaymentDate', 'startDate', 'endDate', 
-            'billingCycle', 'cost', 'user', 'resource_ids'
+            'paymentMethod', 'lastPaymentDate', 'startDate', 'endDate', 'billingCycle', 'cost', 'user', 'resource_ids','resources',
         ]
 
     def create(self, validated_data):

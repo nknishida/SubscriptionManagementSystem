@@ -252,7 +252,7 @@ from django.utils.timezone import now
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from .models import Customer, HardwareServers, Subscription
+from .models import Customer, HardwareServers, ReminderHardware, Subscription
 
 class SubscriptionCountView(APIView):
     """Fetch the count of active and expired subscriptions."""
@@ -1262,6 +1262,59 @@ class AddHardwareAPIView(APIView):
             # serializer.save()
             hardware=serializer.save(user=request.user)
             logger.info("Successfully added hardware: %s", hardware)
+
+            # Extract reminder-related fields from the request data.
+            reminder_field_mapping = {
+                "reminderType": "reminder_type",
+                "reminderDaysBefore": "reminder_days_before",
+                "reminderMonthsBefore": "reminder_months_before",
+                "reminderDayOfMonth": "reminder_day_of_month",
+                "notificationMethod": "notification_method",
+                "recipients": "recipients",
+                "customMessage": "custom_message",
+                "optionalDaysBefore": "optional_days_before",
+            }
+
+            reminder_data = {}
+            for frontend_key, backend_key in reminder_field_mapping.items():
+                if frontend_key in request.data:
+                    reminder_data[backend_key] = request.data[frontend_key]
+
+            # ✅ Apply default reminder settings if none provided (optional)
+            if not any(reminder_data.values()):
+                # For example, default to 30 days before hardware maintenance is due.
+                reminder_data["reminder_type"] = "maintenance"
+                reminder_data["reminder_days_before"] = 30  
+                reminder_data["notification_method"] = "email"
+                reminder_data["recipients"] = request.user.email
+                reminder_data["custom_message"] = "Your hardware maintenance is scheduled soon. Please check your service details."
+                reminder_data["reminder_status"] = "pending"
+            else:
+                # Ensure that required fields are provided if any reminder data is present.
+                if not reminder_data.get("reminder_days_before"):
+                    return Response(
+                        {"error": "reminder_days_before is required for hardware reminders."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+            # If we have reminder data, create a reminder and link it to the hardware.
+            if reminder_data:
+                reminder = Reminder.objects.create(
+                    reminder_type=reminder_data.get("reminder_type"),
+                    reminder_days_before=reminder_data.get("reminder_days_before"),
+                    reminder_months_before=reminder_data.get("reminder_months_before"),
+                    reminder_day_of_month=reminder_data.get("reminder_day_of_month"),
+                    optional_days_before=reminder_data.get("optional_days_before"),
+                    notification_method=reminder_data.get("notification_method"),
+                    recipients=reminder_data.get("recipients"),
+                    custom_message=reminder_data.get("custom_message"),
+                    reminder_status=reminder_data.get("reminder_status", "pending"),
+                )
+
+                # Here we assume there is a linking model between Reminder and Hardware such as ReminderHardware. If your hardware model has a direct FK or OneToOne to Reminder, adjust accordingly.
+                ReminderHardware.objects.create(reminder=reminder, hardware=hardware)
+                logger.info("Reminder created and linked to hardware: %s", reminder)
+            
             return Response({
                 "message": "Hardware successfully added.",
                 "data": serializer.data,
@@ -1607,7 +1660,7 @@ class ResourceCreateView(generics.CreateAPIView):
         if serializer.is_valid():
             serializer.save(user=request.user)
             return Response(
-                {"message": "Resource created successfully!", "resource": serializer.data},
+                {"message": "Resource added successfully!", "resource": serializer.data,"status":status.HTTP_201_CREATED},
                 status=status.HTTP_201_CREATED
             )
         
@@ -1806,20 +1859,23 @@ class ServerListByHostingTypeAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]  # Ensure authentication
 
     def get(self, request):
-        hosting_type = request.query_params.get('hosting_type')
+        hosting_type = request.query_params.get('type')
 
         if not hosting_type:
             return Response({"error": "hosting_type is required"}, status=status.HTTP_400_BAD_REQUEST)
 
         # Fetch server names based on hosting_type
-        if hosting_type.lower() == "on premise server":
+        if hosting_type.lower() == "inhouse":
             servers = HardwareServers.objects.values_list('cpu', flat=True)
+            print(servers)
 
         elif hosting_type.lower() == "external":
             servers = Servers.objects.filter(server_type="External").values_list('server_name', flat=True)
+            print(servers)
 
         elif hosting_type.lower() == "cloud":
-            servers = Servers.objects.filter(server_type="Internal").values_list('server_name', flat=True)
+            servers = Servers.objects.filter(server_type="Cloud").values_list('server_name', flat=True)
+            print(servers)
 
         else:
             return Response(
@@ -1868,7 +1924,7 @@ class ServerUsageView(APIView):
 # ✅ API to List All Customers
 class CustomerListView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
-    queryset = Customer.objects.all()
+    queryset = Customer.objects.prefetch_related('resources').all() 
     serializer_class = CustomerSerializer
 
 # ✅ API to Retrieve, Update, or Delete a Customer
@@ -1939,9 +1995,9 @@ class CustomerTypePercentageAPIView(APIView):
 
         # Count customers by type
         inhouse_count = Customer.objects.filter(customer_type="inhouse").count()
-        print(inhouse_count)
+        print(f"in house count {inhouse_count}")
         external_count = Customer.objects.filter(customer_type="External").count()
-        print(external_count)
+        print(f"external count {external_count}")
 
         # Calculate percentages
         inhouse_percentage = (inhouse_count / total_customers) * 100
@@ -1954,3 +2010,121 @@ class CustomerTypePercentageAPIView(APIView):
         ]
 
         return Response(data, status=status.HTTP_200_OK)
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from .models import Servers, Resource  # Assuming these are your models
+from .serializers import ServerSerializer  # Create this serializer
+
+# class ServerReportAPIView(APIView):
+#     def get(self, request):
+#         servers = Servers.objects.all()
+#         data = []
+        
+#         for server in servers:
+#             server_data = {
+#                 "id": server.id,
+#                 "server_name": server.server_name,
+#                 "server_type": server.server_type,
+#                 "server_capacity": server.server_capacity,
+#                 "used_capacity": server.used_capacity,
+#                 "remaining_capacity": server.remaining_capacity,
+#                 "usage_percentage": f"{server.usage_percentage}%",
+#                 "usage_percentage_value": server.usage_percentage,
+#                 "resources": []
+#             }
+            
+#             resources = Resource.objects.filter(server=server)
+#             for resource in resources:
+#                 resource_data = {
+#                     "resource_name": resource.resource_name,
+#                     "resource_type": resource.resource_type,
+#                     "storage_capacity": resource.storage_capacity,
+#                     "used_storage": resource.used_storage,
+#                     "remaining_storage": resource.remaining_storage,
+#                     "billing_cycle": resource.billing_cycle,
+#                     "resource_cost": f"${resource.resource_cost}",
+#                     "next_payment_date": resource.next_payment_date,
+#                     "provisioned_date": resource.provisioned_date,
+#                     "last_updated_date": resource.last_updated_date,
+#                     "status": resource.status,
+#                     "hosting_type": resource.hosting_type,
+#                     "hosting_location": resource.hosting_location
+#                 }
+#                 server_data["resources"].append(resource_data)
+            
+#             data.append(server_data)
+        
+#         return Response(data, status=status.HTTP_200_OK)
+
+import re
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from .models import Servers
+from .serializers import ServerUsageSerializer
+
+class ServerReportAPIView(APIView):
+    def get(self, request):
+        servers = Servers.objects.all()
+        data = []
+
+        for server in servers:
+            usage_serializer = ServerUsageSerializer(server)  # Get computed values
+            used_capacity = usage_serializer.data["used"]
+            total_capacity = usage_serializer.data["total"]
+            remaining_capacity = total_capacity - used_capacity
+            usage_percentage = usage_serializer.data["percentage"]
+
+            server_data = {
+                "id": server.id,
+                "server_name": server.server_name,
+                "server_type": server.server_type,
+                "server_capacity": server.server_capacity,
+                "used_capacity": f"{used_capacity}GB",
+                "remaining_capacity": f"{remaining_capacity}GB",
+                "usage_percentage": f"{usage_percentage}%",
+                "usage_percentage_value": usage_percentage,
+                "resources": [
+                    {
+                        "resource_name": resource.resource_name,
+                        "resource_type": resource.resource_type,
+                        "storage_capacity": resource.storage_capacity,
+                        # "used_storage": resource.used_storage,
+                        # "remaining_storage": resource.remaining_storage,
+                        "billing_cycle": resource.billing_cycle,
+                        "resource_cost": resource.resource_cost,
+                        "next_payment_date": resource.next_payment_date,
+                        "provisioned_date": resource.provisioned_date,
+                        "last_updated_date": resource.last_updated_date,
+                        "status": resource.status,
+                        "hosting_type": resource.hosting_type,
+                        # "hosting_location": resource.hosting_location
+                    }
+                    for resource in server.server_resources.all()
+                ]
+            }
+            data.append(server_data)
+
+        return Response(data)
+
+from django.utils.timezone import now
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from .models import Subscription
+
+class SubscriptionSoftDeleteAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, subscription_id):
+        try:
+            subscription = Subscription.objects.get(id=subscription_id, is_deleted=False)
+
+            subscription.soft_delete()
+
+            return Response({"message": "Subscription soft deleted successfully."}, status=status.HTTP_200_OK)
+        
+        except Subscription.DoesNotExist:
+            return Response({"error": "Subscription not found or already deleted."}, status=status.HTTP_404_NOT_FOUND)

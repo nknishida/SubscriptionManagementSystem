@@ -105,6 +105,8 @@ class Subscription(models.Model):
         
         if self.next_payment_date and today > self.next_payment_date:
             self.payment_status = "Unpaid"
+        elif self.payment_status == "pending":  # Ensure it doesn't auto-set to "Paid"
+            self.payment_status = "pending"
         else:
             self.payment_status = "Paid"  # You may need payment confirmation logic here
 
@@ -501,22 +503,81 @@ class Reminder(models.Model):
         _, last_day = monthrange(year, month)
         return min(day, last_day)
 
+    # def calculate_all_reminder_dates(self, subscription):
+    #     """Calculate all reminder dates for a subscription."""
+    #     if not subscription.next_payment_date:
+    #         logger.error("No next_payment_date found for subscription")
+    #         return [] 
+
+    #     today = timezone.now().date()
+    #     reminder_dates = []
+
+    #     # Stop reminders if the subscription is paid
+    #     if subscription.payment_status == "Paid":
+    #         logger.info(f"Subscription ID {subscription.id} is paid. No reminders needed.")
+    #         return reminder_dates
+
+    #     # For weekly/monthly cycles
+    #     if subscription.billing_cycle in ['weekly', 'monthly']:
+    #         if self.reminder_days_before:
+    #             start_date = subscription.next_payment_date - timedelta(days=int(self.reminder_days_before))
+    #             current_date = start_date
+    #             while current_date < subscription.next_payment_date:
+    #                 if current_date >= today:
+    #                     reminder_dates.append(current_date)
+    #                 current_date += timedelta(days=1)
+
+    #     # For long-term cycles
+    #     elif subscription.billing_cycle in ['quarterly', 'semi-annual', 'annual', 'biennial', 'triennial']:
+    #         if self.reminder_months_before and self.reminder_day_of_month:
+    #             start_date = max(
+    #                 subscription.next_payment_date - relativedelta(months=self.reminder_months_before),
+    #                 today
+    #             )
+    #             start_date = start_date.replace(
+    #                 day=self.get_valid_day(start_date.year, start_date.month, self.reminder_day_of_month)
+    #             )
+    #             current_date = start_date
+    #             while current_date < subscription.next_payment_date:
+    #                 if current_date >= today:
+    #                     reminder_dates.append(current_date)
+    #                 current_date += relativedelta(months=1)
+
+    #     # Add optional_days_before reminder if present
+    #     if self.optional_days_before:
+    #         optional_reminder_date = subscription.next_payment_date - timedelta(days=self.optional_days_before)
+    #         current_date = optional_reminder_date
+    #         while current_date < subscription.next_payment_date:
+    #             if optional_reminder_date >= today:
+    #                 reminder_dates.append(optional_reminder_date)
+    #             current_date += timedelta(days=1)
+
+    #     # Overdue reminder logic (continue reminders if unpaid/expired)
+    #     if subscription.status == "Expired" or subscription.payment_status == "Unpaid":
+    #         overdue_reminder_date = subscription.next_payment_date + timedelta(days=1)
+    #         while overdue_reminder_date <= today:  # Keep generating overdue reminders
+    #             reminder_dates.append(overdue_reminder_date)
+    #             overdue_reminder_date += timedelta(days=3)  # Overdue reminders every 3 days (adjustable)
+
+    #     logger.info(f"Generated Reminder Dates(in models.py): {reminder_dates}")
+    #     return reminder_dates
+
     def calculate_all_reminder_dates(self, subscription):
         """Calculate all reminder dates for a subscription."""
-        if not subscription.next_payment_date:
-            logger.error("No next_payment_date found for subscription")
+        if not hasattr(subscription, "next_payment_date") or not subscription.next_payment_date:
+            logger.error(f"Subscription {subscription.id if hasattr(subscription, 'id') else 'Unknown'} has no next_payment_date.")
             return []
 
         today = timezone.now().date()
         reminder_dates = []
 
         # Stop reminders if the subscription is paid
-        if subscription.payment_status == "Paid":
+        if hasattr(subscription, "payment_status") and subscription.payment_status == "Paid":
             logger.info(f"Subscription ID {subscription.id} is paid. No reminders needed.")
             return reminder_dates
 
         # For weekly/monthly cycles
-        if subscription.billing_cycle in ['weekly', 'monthly']:
+        if hasattr(subscription, "billing_cycle") and subscription.billing_cycle in ['weekly', 'monthly']:
             if self.reminder_days_before:
                 start_date = subscription.next_payment_date - timedelta(days=int(self.reminder_days_before))
                 current_date = start_date
@@ -526,7 +587,7 @@ class Reminder(models.Model):
                     current_date += timedelta(days=1)
 
         # For long-term cycles
-        elif subscription.billing_cycle in ['quarterly', 'semi-annual', 'annual', 'biennial', 'triennial']:
+        elif hasattr(subscription, "billing_cycle") and subscription.billing_cycle in ['quarterly', 'semi-annual', 'annual', 'biennial', 'triennial']:
             if self.reminder_months_before and self.reminder_day_of_month:
                 start_date = max(
                     subscription.next_payment_date - relativedelta(months=self.reminder_months_before),
@@ -546,16 +607,17 @@ class Reminder(models.Model):
             optional_reminder_date = subscription.next_payment_date - timedelta(days=self.optional_days_before)
             current_date = optional_reminder_date
             while current_date < subscription.next_payment_date:
-                if optional_reminder_date >= today:
-                    reminder_dates.append(optional_reminder_date)
-                current_date += timedelta(days=1)
+                    if optional_reminder_date >= today:
+                        reminder_dates.append(optional_reminder_date)
+                    current_date += timedelta(days=1)
 
         # Overdue reminder logic (continue reminders if unpaid/expired)
-        if subscription.status == "Expired" or subscription.payment_status == "Unpaid":
-            overdue_reminder_date = subscription.next_payment_date + timedelta(days=1)
-            while overdue_reminder_date <= today:  # Keep generating overdue reminders
-                reminder_dates.append(overdue_reminder_date)
-                overdue_reminder_date += timedelta(days=3)  # Overdue reminders every 3 days (adjustable)
+        if hasattr(subscription, "status") and hasattr(subscription, "payment_status"):
+            if subscription.status == "Expired" or subscription.payment_status == "Unpaid":
+                overdue_reminder_date = subscription.next_payment_date + timedelta(days=1)
+                while overdue_reminder_date <= today:  # Keep generating overdue reminders
+                    reminder_dates.append(overdue_reminder_date)
+                    overdue_reminder_date += timedelta(days=3)  # Overdue reminders every 3 days
 
         logger.info(f"Generated Reminder Dates(in models.py): {reminder_dates}")
         return reminder_dates
@@ -644,7 +706,7 @@ class Resource(models.Model):
 
     resource_name = models.CharField(max_length=100)
     resource_type = models.CharField(max_length=50)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES,default='Active')
     billing_cycle = models.CharField(max_length=20, choices=BILLING_CYCLE_CHOICES, default="monthly")
     resource_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     storage_capacity = models.CharField(max_length=100, blank=True, null=True)
@@ -718,6 +780,8 @@ class Resource(models.Model):
 
 class Notification(models.Model):
     subscription = models.ForeignKey("SubSync.Subscription", on_delete=models.CASCADE, related_name="notifications")
+    hardware = models.ForeignKey(Hardware, null=True, blank=True, on_delete=models.CASCADE)
+
     message = models.TextField()
     is_read = models.BooleanField(default=False)
     created_at = models.DateTimeField(default=now)
