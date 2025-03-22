@@ -2,4 +2,5 @@ SubscriptionManagementSystem/settings.py
 SubscriptionManagementSystem/__pycache__/
 SubSync/m1
 SubSync/m2
+
 .env
