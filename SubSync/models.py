@@ -153,7 +153,7 @@ class Subscription(models.Model):
 class SoftwareSubscriptions(models.Model):
     subscription = models.OneToOneField(Subscription, on_delete=models.CASCADE, related_name='software_detail', unique=True)
 
-    software_id =models.CharField(unique=True)
+    software_id =models.CharField(unique=True,max_length=200)
     software_name = models.CharField(max_length=255)
     version = models.CharField(max_length=50, blank=True, null=True)
     # features = models.TextField(blank=True, null=True)
