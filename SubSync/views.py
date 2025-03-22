@@ -734,7 +734,7 @@ class SubscriptionListView(generics.ListAPIView):
     # queryset = Subscription.objects.prefetch_related(
     #     "software_detail", "billing", "domain", "server"
     # ).all()
-    queryset = Subscription.objects.select_related("provider").prefetch_related(
+    queryset = Subscription.objects.filter(is_deleted=False).select_related("provider").prefetch_related(
         "software_detail", "billing", "domain", "server"
     ).all()
     
@@ -2124,7 +2124,7 @@ class SubscriptionSoftDeleteAPIView(APIView):
 
             subscription.soft_delete()
 
-            return Response({"message": "Subscription soft deleted successfully."}, status=status.HTTP_200_OK)
+            return Response({"message": "Subscription deleted successfully.","status":status.HTTP_200_OK}, status=status.HTTP_200_OK)
         
         except Subscription.DoesNotExist:
             return Response({"error": "Subscription not found or already deleted."}, status=status.HTTP_404_NOT_FOUND)
