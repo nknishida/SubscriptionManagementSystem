@@ -12,7 +12,7 @@ class User(AbstractUser):
     username = models.CharField(max_length=150, unique=True)
 
     profile_picture = models.ImageField(upload_to='profile_pics/', null=True, blank=True)
-    # phone_numbers = models.TextField(blank=True, help_text="Comma-separated list of phone numbers for SMS")
+    phone_numbers = models.TextField(blank=True, help_text="Comma-separated list of phone numbers for SMS")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -66,18 +66,21 @@ class Subscription(models.Model):
 
     is_deleted = models.BooleanField(default=False)  # Soft delete flag
     deleted_at = models.DateTimeField(null=True, blank=True)  # Store delete time
+    deleted_by= models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='deleted_subscriptions')
 
-    def soft_delete(self):
+    def soft_delete(self,deleted_by=None):
         """Soft delete: Hide subscription without affecting status."""
         self.is_deleted = True
         self.deleted_at = now()
-        self.save(update_fields=['is_deleted', 'deleted_at'])
+        self.deleted_by=deleted_by
+        self.save(update_fields=['is_deleted', 'deleted_at','deleted_by'])
 
     def restore(self):
         """Restore subscription from soft delete."""
         self.is_deleted = False
         self.deleted_at = None
-        self.save(update_fields=['is_deleted', 'deleted_at'])
+        self.deleted_by=None
+        self.save(update_fields=['is_deleted', 'deleted_at','deleted_by'])
 
     def clean(self):
         if self.end_date and self.start_date and self.end_date < self.start_date:

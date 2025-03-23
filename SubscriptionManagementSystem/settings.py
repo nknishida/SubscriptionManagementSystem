@@ -213,23 +213,27 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 EMAIL_BACKEND='django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST='smtp.gmail.com'
-EMAIL_PORT=587
+EMAIL_HOST=os.getenv('EMAIL_HOST')
+EMAIL_PORT=os.getenv('EMAIL_PORT')
 EMAIL_USE_TLS=True
 EMAIL_USE_SSL=False
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
-# from celery.schedules import crontab
+from celery.schedules import crontab
 
-# CELERY_BEAT_SCHEDULE = {
-#     'send-reminder-emails': {
-#         'task': 'SubSync.tasks.send_reminder_email',
-#         'schedule': crontab(minute='*/1'),  # Run every minute for testing
-#         # 'args': (1,),  # Provide a valid reminder_id here
-#     },
-# }
+CELERY_BEAT_SCHEDULE = {
+    # 'send-reminder-emails': {
+    #     'task': 'SubSync.tasks.send_reminder_email',
+    #     'schedule': crontab(minute='*/1'),  # Run every minute for testing
+    #     # 'args': (1,),  # Provide a valid reminder_id here
+    # },
+    'delete-old-recycle-bin-items': {
+        'task': 'SubSync.tasks.delete_old_recycle_bin_items',
+        'schedule': crontab(minute='*/1'),
+    },
+}
 
 CELERY_BROKER_URL = 'redis://localhost:6379/0'
 CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'

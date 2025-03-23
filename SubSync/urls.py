@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import ActiveSubscriptionsView, AddHardwareAPIView, CustomTokenRefreshView, CustomerAPIView, CustomerDetailView, CustomerListView, CustomerTypePercentageAPIView, DashboardOverview, DashboardOverviewAll, ExpiredSubscriptionsView, HardwareSummaryView, ListHardwareView, LoginAPIView, ForgotPasswordAPIView, LogoutView, MarkNotificationAsReadView, NotificationListView, ProviderListView, RecycleBinView, ReminderAPIView, ResetPasswordAPIView, CreateUserAPIView, ResourceCreateView, ResourceDetailView, ResourceListCreateView, ResourceNameListView, RetrieveUpdateHardwareView, ServerListByHostingTypeAPIView, ServerReportAPIView, ServerUsageView, SubscriptionCategoryDistributionView, SubscriptionChoicesView, SubscriptionCountView, SubscriptionCreateView, ProviderCreateView,ChangePasswordView, SubscriptionListView, SubscriptionDetailView, SubscriptionMonthlyAnalysisView, SubscriptionReportView, SubscriptionSoftDeleteAPIView, UpcomingHardwareAPIView, UserProfileView, WarningSubscriptionsView, hardware_report, spending_report
+from .views import ActiveSubscriptionsView, AddHardwareAPIView, CustomTokenRefreshView, CustomerAPIView, CustomerDetailView, CustomerListView, CustomerTypePercentageAPIView, DashboardOverview, DashboardOverviewAll, ExpiredSubscriptionsView, HardwareSummaryView, IsSuperUserCheckAPIView, ListHardwareView, LoginAPIView, ForgotPasswordAPIView, LogoutView, MarkNotificationAsReadView, NotificationListView, ProviderListView, RecycleBinView, ReminderAPIView, ResetPasswordAPIView, CreateUserAPIView, ResourceCreateView, ResourceDetailView, ResourceListCreateView, ResourceNameListView, RetrieveUpdateHardwareView, ServerListByHostingTypeAPIView, ServerReportAPIView, ServerUsageView, SubscriptionCategoryDistributionView, SubscriptionChoicesView, SubscriptionCountView, SubscriptionCreateView, ProviderCreateView,ChangePasswordView, SubscriptionListView, SubscriptionDetailView, SubscriptionMonthlyAnalysisView, SubscriptionReportView, SubscriptionSoftDeleteAPIView, UpcomingHardwareAPIView, UserProfileView, WarningSubscriptionsView, hardware_report, spending_report
 from .views import SubscriptionDetailUpdateView, ExpenditureAnalysisView
 from rest_framework_simplejwt import views as jwt_views
 
@@ -12,7 +12,10 @@ urlpatterns = [
     path("change-password/", ChangePasswordView.as_view(), name="change-password"),
 
     path('create-user/', CreateUserAPIView.as_view(), name='create-user'),
+    path('check-superuser/', IsSuperUserCheckAPIView.as_view(), name='check-superuser'),
+
     path('recycle-bin/', RecycleBinView.as_view(), name='recycle-bin'),
+    
     path('profile/', UserProfileView.as_view(), name='user-profile'),
     # path('token/', jwt_views.TokenObtainPairView.as_view(), name = 'token'),
     # path('token/refresh/', jwt_views.TokenRefreshView.as_view(), name='token_refresh'),

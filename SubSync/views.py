@@ -202,7 +202,7 @@ User = get_user_model()
 #         return Response({"message": "User created successfully","status":status.HTTP_201_CREATED}, status=status.HTTP_201_CREATED)
 import random
 import string
-from django.contrib.auth.models import User
+# from django.contrib.auth.models import User
 
 class CreateUserAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -214,7 +214,7 @@ class CreateUserAPIView(APIView):
 
     def post(self, request):
         email = request.data.get("email")
-        username = request.data.get("username")
+        username = request.data.get("name")
         role = request.data.get("role")
 
         if not email or not username or not role:
@@ -227,7 +227,7 @@ class CreateUserAPIView(APIView):
         random_password = self.generate_random_password()
 
         # Create user based on role
-        if role.lower() == "superuser":
+        if role.lower() == "super":
             user = User.objects.create_superuser(username=username, email=email, password=random_password)
         else:
             user = User.objects.create_user(username=username, email=email, password=random_password)
@@ -280,7 +280,7 @@ class UserProfileView(APIView):
         """View user profile."""
         user = request.user
         serializer = UserProfileSerializer(user, context={'request': request})
-        return Response(serializer.data)
+        return Response({"status":status.HTTP_200_OK},serializer.data)
 
     def put(self, request):
         """Update user profile."""
@@ -289,7 +289,7 @@ class UserProfileView(APIView):
         
         if serializer.is_valid():
             serializer.save()
-            return Response(serializer.data, status=status.HTTP_200_OK)
+            return Response({"message":"user updated successfully","status":status.HTTP_200_OK},serializer.data, status=status.HTTP_200_OK)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -876,7 +876,7 @@ class SubscriptionDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
         """
         Override the delete method to perform a soft delete instead of a hard delete.
         """
-        instance.soft_delete() 
+        instance.soft_delete(deleted_by=self.request.user) 
 
 # from datetime import datetime, timedelta
 # from collections import defaultdict
@@ -2242,40 +2242,311 @@ from rest_framework import status
 from .models import Subscription, Hardware, Customer
 from .serializers import SubscriptionSerializer, HardwareSerializer, CustomerSerializer
 
+# class RecycleBinView(APIView):
+#     def get(self, request):
+#         # Fetch all soft-deleted items
+#         subscriptions = Subscription.objects.filter(is_deleted=True)
+#         hardware = Hardware.objects.filter(is_deleted=True)
+#         customers = Customer.objects.filter(is_deleted=True)
+
+#         # Serialize the data
+#         subscription_data = SubscriptionDetailSerializer(subscriptions, many=True).data
+#         hardware_data = HardwareSerializer(hardware, many=True).data
+#         customer_data = CustomerSerializer(customers, many=True).data
+
+#         # Combine the data
+#         data = {
+#             'subscriptions': subscription_data,
+#             'hardware': hardware_data,
+#             'customers': customer_data,
+#         }
+
+#         return Response(data, status=status.HTTP_200_OK)
+
+#     def post(self, request):
+#         # Restore a soft-deleted item
+#         item_type = request.data.get('type')
+#         item_id = request.data.get('id')
+
+#         if item_type == 'subscription':
+#             item = Subscription.objects.get(id=item_id)
+#         elif item_type == 'hardware':
+#             item = Hardware.objects.get(id=item_id)
+#         elif item_type == 'customer':
+#             item = Customer.objects.get(id=item_id)
+#         else:
+#             return Response({'error': 'Invalid item type'}, status=status.HTTP_400_BAD_REQUEST)
+
+#         item.restore()  # Call the restore method
+#         return Response({'message': f'{item_type} restored successfully'}, status=status.HTTP_200_OK)
+
+# from django.utils import timezone
+# from datetime import timedelta
+# from rest_framework.views import APIView
+# from rest_framework.response import Response
+# from rest_framework import status
+# from .models import Subscription, Hardware, Customer
+# from .serializers import SubscriptionDetailSerializer, HardwareSerializer, CustomerSerializer
+
+# class RecycleBinView(APIView):
+#     def get(self, request):
+#         """
+#         Fetch all soft-deleted items that have 30 days or less before permanent deletion.
+#         """
+#         # Calculate the date 30 days from now
+#         thirty_days_from_now = timezone.now() + timedelta(days=30)
+
+#         # Fetch soft-deleted items with deletion dates within the next 30 days
+#         subscriptions = Subscription.objects.filter(
+#             is_deleted=True,
+#             deleted_at__lte=thirty_days_from_now
+#         )
+#         hardware = Hardware.objects.filter(
+#             is_deleted=True,
+#             deleted_at__lte=thirty_days_from_now
+#         )
+#         customers = Customer.objects.filter(
+#             is_deleted=True,
+#             deleted_at__lte=thirty_days_from_now
+#         )
+
+#         # Serialize the data
+#         subscription_data = SubscriptionDetailSerializer(subscriptions, many=True).data
+#         hardware_data = HardwareSerializer(hardware, many=True).data
+#         customer_data = CustomerSerializer(customers, many=True).data
+
+#         # Combine the data
+#         data = {
+#             'subscriptions': subscription_data,
+#             'hardware': hardware_data,
+#             'customers': customer_data,
+#         }
+
+#         return Response(data, status=status.HTTP_200_OK)
+
+#     def post(self, request):
+#         """
+#         Restore a soft-deleted item or permanently delete selected items.
+#         """
+#         action = request.data.get('action')  # 'restore' or 'delete_permanently'
+#         item_type = request.data.get('type')  # 'subscription', 'hardware', or 'customer'
+#         item_ids = request.data.get('ids', [])  # List of item IDs to restore or delete
+
+#         if action not in ['restore', 'delete_permanently']:
+#             return Response({'error': 'Invalid action'}, status=status.HTTP_400_BAD_REQUEST)
+
+#         if item_type not in ['subscription', 'hardware', 'customer']:
+#             return Response({'error': 'Invalid item type'}, status=status.HTTP_400_BAD_REQUEST)
+
+#         if not item_ids:
+#             return Response({'error': 'No items selected'}, status=status.HTTP_400_BAD_REQUEST)
+
+#         # Fetch the items based on the type
+#         if item_type == 'subscription':
+#             items = Subscription.objects.filter(id__in=item_ids, is_deleted=True)
+#         elif item_type == 'hardware':
+#             items = Hardware.objects.filter(id__in=item_ids, is_deleted=True)
+#         elif item_type == 'customer':
+#             items = Customer.objects.filter(id__in=item_ids, is_deleted=True)
+
+#         if not items.exists():
+#             return Response({'error': 'No matching items found'}, status=status.HTTP_404_NOT_FOUND)
+
+#         # Perform the action
+#         if action == 'restore':
+#             for item in items:
+#                 item.restore()  # Call the restore method
+#             message = f'{len(items)} {item_type}(s) restored successfully'
+#         elif action == 'delete_permanently':
+#             items.delete()  # Permanently delete the items
+#             message = f'{len(items)} {item_type}(s) permanently deleted'
+
+#         return Response({'message': message}, status=status.HTTP_200_OK)
+
+from django.utils import timezone
+from datetime import timedelta
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from .models import Subscription, Hardware, Customer
+from .serializers import SubscriptionDetailSerializer, HardwareSerializer, CustomerSerializer
+
 class RecycleBinView(APIView):
     def get(self, request):
-        # Fetch all soft-deleted items
-        subscriptions = Subscription.objects.filter(is_deleted=True)
-        hardware = Hardware.objects.filter(is_deleted=True)
-        customers = Customer.objects.filter(is_deleted=True)
+        """
+        Fetch all soft-deleted items that have 30 days or less before permanent deletion.
+        Transform the data into the frontend format.
+        """
+        # Calculate the date 30 days from now
+        thirty_days_from_now = timezone.now() + timedelta(days=30)
+
+        # Fetch soft-deleted items with deletion dates within the next 30 days
+        subscriptions = Subscription.objects.filter(
+            is_deleted=True,
+            deleted_at__lte=thirty_days_from_now
+        )
+        hardware = Hardware.objects.filter(
+            is_deleted=True,
+            deleted_at__lte=thirty_days_from_now
+        )
+        customers = Customer.objects.filter(
+            is_deleted=True,
+            deleted_at__lte=thirty_days_from_now
+        )
 
         # Serialize the data
         subscription_data = SubscriptionDetailSerializer(subscriptions, many=True).data
         hardware_data = HardwareSerializer(hardware, many=True).data
         customer_data = CustomerSerializer(customers, many=True).data
 
-        # Combine the data
-        data = {
-            'subscriptions': subscription_data,
-            'hardware': hardware_data,
-            'customers': customer_data,
-        }
+        # Transform the data into the frontend format
+        transformed_data = self.transform_to_frontend_format(
+            subscription_data, hardware_data, customer_data
+        )
 
-        return Response(data, status=status.HTTP_200_OK)
+        return Response(transformed_data, status=status.HTTP_200_OK)
+
+    def transform_to_frontend_format(self, subscription_data, hardware_data, customer_data):
+        """
+        Transform backend data into the frontend format.
+        """
+        transformed_data = []
+        current_date = timezone.now()
+
+        # Transform subscriptions
+        for subscription in subscription_data:
+            deleted_at_str = subscription.get("deleted_at")
+            print(deleted_at_str)
+            if deleted_at_str:
+                deleted_at = datetime.fromisoformat(deleted_at_str)
+                # Calculate expiration date (30 days after deletion)
+                expiration_date = deleted_at + timedelta(days=30)
+                # Calculate remaining days
+                remaining_days = (expiration_date - current_date).days
+            else:
+                remaining_days = None  
+
+            transformed_data.append({
+                "id": f"sub-{subscription['id']}",
+                "name": subscription.get("name", "Unnamed Subscription"),
+                "type": "subscription",
+                "deletedAt": deleted_at_str,
+                "deletedBy": subscription.get("deleted_by", "Unknown"),
+                "expiresAt": remaining_days,
+            })
+
+        # Transform hardware
+        for hardware in hardware_data:
+            deleted_at_str = hardware.get("deleted_at")
+            if deleted_at_str:
+                deleted_at = datetime.fromisoformat(deleted_at_str)
+                expiration_date = deleted_at + timedelta(days=30)
+                remaining_days = (expiration_date - current_date).days
+            else:
+                remaining_days = None
+            transformed_data.append({
+                "id": f"hw-{hardware['id']}",
+                "name": hardware.get("name", "Unnamed Hardware"),
+                "type": "hardware",
+                "deletedAt": deleted_at_str,
+                "deletedBy": hardware.get("deleted_by", "Unknown"),
+                "expiresAt": remaining_days,
+            })
+
+        # Transform customers
+        for customer in customer_data:
+            deleted_at_str = customer.get("deleted_at")
+            if deleted_at_str:
+                deleted_at = datetime.fromisoformat(deleted_at_str)
+                expiration_date = deleted_at + timedelta(days=30)
+                remaining_days = (expiration_date - current_date).days
+            else:
+                remaining_days = None
+
+            transformed_data.append({
+                "id": f"cust-{customer['id']}",
+                "name": customer.get("customer_name", "Unnamed Customer"),
+                "type": "customer",
+                "deletedAt": deleted_at_str,
+                "deletedBy": customer.get("deleted_by", "Unknown"),
+                "expiresAt": remaining_days,
+            })
+
+        return transformed_data
 
     def post(self, request):
-        # Restore a soft-deleted item
-        item_type = request.data.get('type')
-        item_id = request.data.get('id')
+        """
+        Restore a soft-deleted item or permanently delete selected items.
+        """
+        action = request.data.get('action')  # 'restore' or 'delete_permanently'
+        item_type = request.data.get('type')  # 'subscription', 'hardware', or 'customer'
+        item_ids = request.data.get('ids', [])  # List of item IDs to restore or delete
 
-        if item_type == 'subscription':
-            item = Subscription.objects.get(id=item_id)
-        elif item_type == 'hardware':
-            item = Hardware.objects.get(id=item_id)
-        elif item_type == 'customer':
-            item = Customer.objects.get(id=item_id)
-        else:
+        if action not in ['restore', 'delete_permanently']:
+            return Response({'error': 'Invalid action'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if item_type not in ['subscription', 'hardware', 'customer']:
             return Response({'error': 'Invalid item type'}, status=status.HTTP_400_BAD_REQUEST)
 
-        item.restore()  # Call the restore method
-        return Response({'message': f'{item_type} restored successfully'}, status=status.HTTP_200_OK)
+        if not item_ids:
+            return Response({'error': 'No items selected'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Fetch the items based on the type
+        if item_type == 'subscription':
+            items = Subscription.objects.filter(id__in=item_ids, is_deleted=True)
+        elif item_type == 'hardware':
+            items = Hardware.objects.filter(id__in=item_ids, is_deleted=True)
+        elif item_type == 'customer':
+            items = Customer.objects.filter(id__in=item_ids, is_deleted=True)
+
+        if not items.exists():
+            return Response({'error': 'No matching items found'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Perform the action
+        if action == 'restore':
+            for item in items:
+                item.restore()  # Call the restore method
+            message = f'{len(items)} {item_type}(s) restored successfully'
+        elif action == 'delete_permanently':
+            items.delete()  # Permanently delete the items
+            message = f'{len(items)} {item_type}(s) permanently deleted'
+
+        return Response({'message': message}, status=status.HTTP_200_OK)
+
+    # def delete(self, request):
+    #     """
+    #     Automatically delete items that have been in the recycle bin for more than 30 days.
+    #     """
+    #     # Calculate the date 30 days ago
+    #     thirty_days_ago = timezone.now() - timedelta(days=30)
+
+    #     # Fetch items that were deleted more than 30 days ago
+    #     Subscription.objects.filter(is_deleted=True, deleted_at__lte=thirty_days_ago).delete()
+    #     Hardware.objects.filter(is_deleted=True, deleted_at__lte=thirty_days_ago).delete()
+    #     Customer.objects.filter(is_deleted=True, deleted_at__lte=thirty_days_ago).delete()
+
+    #     return Response({'message': 'Old items permanently deleted'}, status=status.HTTP_200_OK)
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+
+class IsSuperUserCheckAPIView(APIView):
+    """
+    API endpoint to check if the authenticated user is a superuser.
+    """
+    permission_classes = [IsAuthenticated]  # Ensure the user is authenticated
+
+    def get(self, request, *args, **kwargs):
+        """
+        Check if the authenticated user is a superuser.
+        """
+        user = request.user
+        is_superuser = user.is_superuser  # Check if the user is a superuser
+
+        return Response({
+            "is_superuser": is_superuser,
+            "username": user.username,
+            "email": user.email,
+        }, status=status.HTTP_200_OK)

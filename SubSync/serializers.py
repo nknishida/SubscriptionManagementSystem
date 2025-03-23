@@ -24,17 +24,19 @@ from .models import User
 class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'email', 'username', 'profile_picture']
+        fields = ['id', 'email', 'username', 'profile_picture','phone_numbers']
         extra_kwargs = {
             'email': {'required': False},  # Allow partial updates
             'username': {'required': False},
-            'profile_picture': {'required': False}
+            'profile_picture': {'required': False},
+            'phone_numbers': {'required': False}
         }
 
     def update(self, instance, validated_data):
         # Update user fields if provided
         instance.email = validated_data.get('email', instance.email)
         instance.username = validated_data.get('username', instance.username)
+        instance.phone_numbers=validated_data.get('phone_numbers',instance.phone_numbers)
         
         # Update profile picture if provided
         if 'profile_picture' in validated_data:
@@ -211,6 +213,8 @@ class SubscriptionDetailSerializer(serializers.ModelSerializer):
     server_type = serializers.CharField(source="server.server_type", read_only=True)
     server_capacity = serializers.CharField(source="server.server_capacity", read_only=True)
 
+    deleted_at = serializers.DateTimeField(format="%Y-%m-%dT%H:%M:%S%z", read_only=True)
+
     class Meta:
         model = Subscription
         fields = [
@@ -260,7 +264,8 @@ class SubscriptionDetailSerializer(serializers.ModelSerializer):
             "server_id",
             "server_name",
             "server_type",
-            "server_capacity"
+            "server_capacity",
+            "deleted_at",
         ]
 
     def to_representation(self, instance):
@@ -668,6 +673,8 @@ class CustomerSerializer(serializers.ModelSerializer):
     # Allow assigning multiple resource IDs while creating a customer
     resource_ids = serializers.ListField(child=serializers.IntegerField(), write_only=True, required=False)
 
+    deleted_at = serializers.DateTimeField(format="%Y-%m-%dT%H:%M:%S%z", read_only=True)
+
     # List of resources connected to this customer
     resources = ResourceSerializer(many=True, read_only=True) 
 
@@ -679,7 +686,7 @@ class CustomerSerializer(serializers.ModelSerializer):
         #     'billing_cycle', 'cost', 'user', 'resource_ids'
         # ]
         fields = [
-            'id', 'customer_name', 'customer_phone', 'customer_email', 'status', 'customer_type', 
+            'id', 'customer_name', 'customer_phone', 'customer_email', 'status', 'customer_type', "deleted_at",
             'paymentMethod', 'lastPaymentDate', 'startDate', 'endDate', 'billingCycle', 'cost', 'user', 'resource_ids','resources',
         ]
 

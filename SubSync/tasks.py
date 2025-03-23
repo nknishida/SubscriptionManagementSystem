@@ -395,3 +395,23 @@ def send_in_app_notification(entity, message):
     except Exception as e:
         logger.error(f"Failed to create in-app notification: {e}")
         return False
+
+
+from celery import shared_task
+from django.utils import timezone
+from datetime import timedelta
+from .models import Subscription, Hardware, Customer
+
+@shared_task
+def delete_old_recycle_bin_items():
+    """
+    Automatically delete items that have been in the recycle bin for more than 30 days.
+    """
+    thirty_days_ago = timezone.now() - timedelta(days=30)
+
+    # Delete old items
+    Subscription.objects.filter(is_deleted=True, deleted_at__lte=thirty_days_ago).delete()
+    Hardware.objects.filter(is_deleted=True, deleted_at__lte=thirty_days_ago).delete()
+    Customer.objects.filter(is_deleted=True, deleted_at__lte=thirty_days_ago).delete()
+
+    return "Old items permanently deleted"
