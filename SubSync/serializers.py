@@ -52,7 +52,7 @@ class ProviderSerializer(serializers.ModelSerializer):
     # class Meta:
     #     model = Provider
     #     fields = '__all__'
-    id = serializers.IntegerField()  # Include the provider ID
+    # id = serializers.IntegerField()  # Include the provider ID
     providerName = serializers.CharField(source='provider_name')
     providerContact = serializers.CharField(source='contact_phone', allow_blank=True, required=False)
     providerEmail = serializers.EmailField(source='contact_email')
@@ -60,7 +60,13 @@ class ProviderSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Provider
-        fields = ['id','providerName', 'providerContact', 'providerEmail', 'websiteLink']
+        fields = ['providerName', 'providerContact', 'providerEmail', 'websiteLink']
+
+    def validate_providerEmail(self, value):
+        """Check if the email is already used"""
+        if Provider.objects.filter(contact_email=value).exists():
+            raise serializers.ValidationError("A provider with this email already exists.")
+        return value
 
 class SubscriptionSerializer(serializers.ModelSerializer):
     # provider = serializers.PrimaryKeyRelatedField(queryset=Provider.objects.all())
