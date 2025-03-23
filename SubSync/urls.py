@@ -4,7 +4,7 @@ from .views import SubscriptionDetailUpdateView, ExpenditureAnalysisView
 from rest_framework_simplejwt import views as jwt_views
 
 urlpatterns = [
-    
+
     path('login/', LoginAPIView.as_view(), name='login'),
     path('logout/', LogoutView.as_view(), name='logout'),
     path('forgot-password/', ForgotPasswordAPIView.as_view(), name='forgot_password'),
@@ -62,13 +62,13 @@ urlpatterns = [
     path('resources/add/', ResourceCreateView.as_view(), name='resource-add'),
     path('resources/', ResourceListCreateView.as_view(), name='resource-list-create'),
     path('resources/<int:pk>/', ResourceDetailView.as_view(), name='resource-detail'),
-    
+    path('servers-by-hosting-type/', ServerListByHostingTypeAPIView.as_view(), name='get_servers_by_hosting_type'),
 
     path("notifications/", NotificationListView.as_view(), name="notification-list"),
     path("notifications/<int:pk>/", MarkNotificationAsReadView.as_view(), name="mark-notification-read"),
 
 
-    path('servers-by-hosting-type/', ServerListByHostingTypeAPIView.as_view(), name='get_servers_by_hosting_type'),
+    
     path("server-usage/", ServerUsageView.as_view(), name="server-usage"),
     path('server-report/', ServerReportAPIView.as_view(), name='server-report'),
 

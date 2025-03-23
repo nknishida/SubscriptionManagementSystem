@@ -1311,6 +1311,8 @@ class AddHardwareAPIView(APIView):
         # serializer = HardwareSerializer(data=request.data, context={'request': request})
         # Convert frontend fields to match backend model
         converted_data = self.convert_frontend_to_backend(request.data)
+        logger.info("Converted data: %s", converted_data)
+
         converted_data["user"] = request.user.id
         converted_data["status"] = "Active"
         logger.info("Converted data: %s", converted_data)
@@ -1346,7 +1348,7 @@ class AddHardwareAPIView(APIView):
             if not any(reminder_data.values()):
                 # For example, default to 30 days before hardware maintenance is due.
                 reminder_data["reminder_type"] = "maintenance"
-                reminder_data["reminder_days_before"] = 30  
+                reminder_data["reminder_days_before"] = 3  
                 reminder_data["notification_method"] = "email"
                 reminder_data["recipients"] = request.user.email
                 reminder_data["custom_message"] = "Your hardware maintenance is scheduled soon. Please check your service details."
@@ -1392,6 +1394,15 @@ class AddHardwareAPIView(APIView):
     
     def convert_frontend_to_backend(self, data):
         try:
+
+            extended_warranty_period = data.get("extendedWarrantyPeriod", "").strip()
+            if extended_warranty_period == "":
+                extended_warranty_period = None
+            else:
+                try:
+                    extended_warranty_period = int(extended_warranty_period)
+                except ValueError:
+                    extended_warranty_period = None
             converted = {
                 "hardware_type": data.get("deviceType"),
                 "manufacturer": data.get("manufacturer"),
@@ -1402,12 +1413,12 @@ class AddHardwareAPIView(APIView):
                 # "status": "active",  # Set default status
                 "purchase": {
                     "purchase_date": parse_date(data.get("purchaseDate")),
-                    "purchase_cost": parse_date(data.get("purchasecost"))
+                    "purchase_cost": data.get("purchasecost")
                 },
                 "warranty": {
                     "warranty_expiry_date": parse_date(data.get("warrantyExpiryDate")),
                     "is_extended_warranty": data.get("isExtendedWarranty", False),
-                    "extended_warranty_period": int(data.get("extendedWarrantyPeriod", 0) or 0),
+                    "extended_warranty_period": extended_warranty_period,
                 },
                 "services": [{
                     "last_service_date": parse_date(data.get("lastServiceDate")),
@@ -2092,7 +2103,7 @@ class CustomerTypePercentageAPIView(APIView):
         # Count customers by type
         inhouse_count = Customer.objects.filter(customer_type="inhouse").count()
         print(f"in house count {inhouse_count}")
-        external_count = Customer.objects.filter(customer_type="External").count()
+        external_count = Customer.objects.filter(customer_type="external").count()
         print(f"external count {external_count}")
 
         # Calculate percentages

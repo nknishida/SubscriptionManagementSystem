@@ -262,18 +262,18 @@ class Servers(models.Model):
 
 class Hardware(models.Model):
 
-    TYPE_CHOICES = [
-        ('Laptop', 'Laptop'),
-        ('Desktop', 'Desktop'),
-        ('Mobile Phone', 'Mobile Phone'),
-        ('Tablet', 'Tablet'),
-        ('Network Device', 'Network Device'),
-        ('Air Conditioner', 'Air Conditioner'),
-        ('on-premise server', 'on-premise server'),
-        ('Printer', 'Printer'),
-        ('Scanner', 'Scanner'),
-        ('Other', 'Other'),
-    ]
+    # TYPE_CHOICES = [
+    #     ('Laptop', 'Laptop'),
+    #     ('Desktop', 'Desktop'),
+    #     ('Mobile Phone', 'Mobile Phone'),
+    #     ('Tablet', 'Tablet'),
+    #     ('Network Device', 'Network Device'),
+    #     ('Air Conditioner', 'Air Conditioner'),
+    #     ('on-premise server', 'on-premise server'),
+    #     ('Printer', 'Printer'),
+    #     ('Scanner', 'Scanner'),
+    #     ('Other', 'Other'),
+    # ]
 
     STATUS_CHOICES = [
         ('Active', 'Active'),
@@ -282,7 +282,7 @@ class Hardware(models.Model):
     ]
 
     # hardware_name = models.CharField(max_length=100)
-    hardware_type = models.CharField(max_length=50, choices=TYPE_CHOICES)
+    hardware_type = models.CharField(max_length=50)
     manufacturer = models.CharField(max_length=255)
     model_number = models.CharField(max_length=255)
     serial_number = models.CharField(max_length=100, unique=True)
