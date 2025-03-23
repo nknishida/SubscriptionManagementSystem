@@ -199,7 +199,7 @@ class CreateUserAPIView(APIView):
             return Response({"error": "Email already exists"}, status=status.HTTP_400_BAD_REQUEST)
 
         user = User.objects.create_user(email=email, username=username, password=password)
-        return Response({"message": "User created successfully"}, status=status.HTTP_201_CREATED)
+        return Response({"message": "User created successfully","status":status.HTTP_201_CREATED}, status=status.HTTP_201_CREATED)
 
 
 from django.db.models import Count
@@ -392,13 +392,15 @@ class ProviderCreateView(generics.CreateAPIView):
         if serializer.is_valid():
             serializer.save()
             return Response(
-                { "status": status.HTTP_201_CREATED},
+                { "status": status.HTTP_201_CREATED,
+                 "data": serializer.data},
                 status=status.HTTP_201_CREATED
             )
         
         # logger.error(f"Validation Error: {serializer.errors}")
         # print("Validation Errors:", serializer.errors)  # Debugging
 
+        print("Serializer Errors:", serializer.errors)  # Print detailed errors
         return Response(
             {"status": "error", "code": status.HTTP_400_BAD_REQUEST, "errors": serializer.errors},
             status=status.HTTP_400_BAD_REQUEST
@@ -782,39 +784,54 @@ from rest_framework.views import APIView
 from SubSync.models import Subscription
 from SubSync.serializers import SubscriptionSerializer
 
-class SubscriptionDetailUpdateView(APIView):
-    permission_classes = [AllowAny]
+# class SubscriptionDetailUpdateView(APIView):
+#     permission_classes = [AllowAny]
 
-    def get(self, request, pk):
-        """Fetch subscription details."""
-        try:
-            subscription = Subscription.objects.get(pk=pk)
-            serializer = SubscriptionSerializer(subscription)
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        except Subscription.DoesNotExist:
-            return Response({"error": "Subscription not found"}, status=status.HTTP_404_NOT_FOUND)
+#     def get(self, request, pk):
+#         """Fetch subscription details."""
+#         try:
+#             subscription = Subscription.objects.get(pk=pk)
+#             serializer = SubscriptionSerializer(subscription)
+#             return Response(serializer.data, status=status.HTTP_200_OK)
+#         except Subscription.DoesNotExist:
+#             return Response({"error": "Subscription not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    def put(self, request, pk):
-        """Update subscription details."""
-        try:
-            subscription = Subscription.objects.get(pk=pk)
-        except Subscription.DoesNotExist:
-            return Response({"error": "Subscription not found"}, status=status.HTTP_404_NOT_FOUND)
+#     def put(self, request, pk):
+#         """Update subscription details."""
+#         try:
+#             subscription = Subscription.objects.get(pk=pk)
+#         except Subscription.DoesNotExist:
+#             return Response({"error": "Subscription not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        serializer = SubscriptionSerializer(subscription, data=request.data, partial=True)
+#         serializer = SubscriptionSerializer(subscription, data=request.data, partial=True)
         
-        if serializer.is_valid():
-            # Validate: End date should not be before start date
-            start_date = serializer.validated_data.get("start_date", subscription.start_date)
-            end_date = serializer.validated_data.get("end_date", subscription.end_date)
+#         if serializer.is_valid():
+#             # Validate: End date should not be before start date
+#             start_date = serializer.validated_data.get("start_date", subscription.start_date)
+#             end_date = serializer.validated_data.get("end_date", subscription.end_date)
 
-            if end_date < start_date:
-                return Response({"error": "End date cannot be before start date"}, status=status.HTTP_400_BAD_REQUEST)
+#             if end_date < start_date:
+#                 return Response({"error": "End date cannot be before start date"}, status=status.HTTP_400_BAD_REQUEST)
 
-            serializer.save()
-            return Response({"message": "Subscription updated successfully", "data": serializer.data}, status=status.HTTP_200_OK)
+#             serializer.save()
+#             return Response({"message": "Subscription updated successfully", "data": serializer.data}, status=status.HTTP_200_OK)
         
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+class SubscriptionDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    API endpoint to retrieve, update, or delete a subscription.
+    """
+    queryset = Subscription.objects.filter(is_deleted=False).select_related("provider").prefetch_related(
+        "software_detail", "billing", "domain", "server"
+    ).all()
+    serializer_class = SubscriptionDetailSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def perform_destroy(self, instance):
+        """
+        Override the delete method to perform a soft delete instead of a hard delete.
+        """
+        instance.soft_delete() 
 
 # from datetime import datetime, timedelta
 # from collections import defaultdict
@@ -1451,23 +1468,57 @@ class ListHardwareView(generics.ListAPIView):
         else:
             return queryset.order_by(ordering)
         
+# class RetrieveUpdateHardwareView(generics.RetrieveUpdateAPIView):
+#     queryset = Hardware.objects.all()
+#     serializer_class = HardwareSerializer
+#     permission_classes = [IsAuthenticated]
+
+#     def update(self, request, *args, **kwargs):
+#         instance = self.get_object()
+
+#         # Partial update (PATCH) or full update (PUT)
+#         partial = kwargs.get('partial', False)
+#         serializer = self.get_serializer(instance, data=request.data, partial=partial)
+
+#         if serializer.is_valid():
+#             self.perform_update(serializer)
+#             return Response({"message": "Hardware updated successfully", "hardware": serializer.data}, status=status.HTTP_200_OK)
+        
+#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+from rest_framework import generics, status
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from .models import Hardware
+from .serializers import HardwareSerializer
+
 class RetrieveUpdateHardwareView(generics.RetrieveUpdateAPIView):
     queryset = Hardware.objects.all()
     serializer_class = HardwareSerializer
     permission_classes = [IsAuthenticated]
 
+    # Optionally override update() if you need custom behavior
     def update(self, request, *args, **kwargs):
+        # Log incoming data if needed
+        print("Update Request Data:", request.data)
+        partial = kwargs.pop('partial', False)
         instance = self.get_object()
-
-        # Partial update (PATCH) or full update (PUT)
-        partial = kwargs.get('partial', False)
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
-
-        if serializer.is_valid():
-            self.perform_update(serializer)
-            return Response({"message": "Hardware updated successfully", "hardware": serializer.data}, status=status.HTTP_200_OK)
         
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        if serializer.is_valid():
+            hardware = serializer.save()
+            return Response({
+                "message": "Hardware successfully updated.",
+                "data": HardwareSerializer(hardware, context={'request': request}).data,
+                "status": status.HTTP_200_OK
+            }, status=status.HTTP_200_OK)
+        
+        print("Update Serializer Errors:", serializer.errors)
+        return Response({
+            "message": "Failed to update hardware. Please check the input data.",
+            "errors": serializer.errors,
+        }, status=status.HTTP_400_BAD_REQUEST)
+
     
 from django.db.models import Sum, Count
 from django.utils.timezone import now
@@ -2128,3 +2179,47 @@ class SubscriptionSoftDeleteAPIView(APIView):
         
         except Subscription.DoesNotExist:
             return Response({"error": "Subscription not found or already deleted."}, status=status.HTTP_404_NOT_FOUND)
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from .models import Subscription, Hardware, Customer
+from .serializers import SubscriptionSerializer, HardwareSerializer, CustomerSerializer
+
+class RecycleBinView(APIView):
+    def get(self, request):
+        # Fetch all soft-deleted items
+        subscriptions = Subscription.objects.filter(is_deleted=True)
+        hardware = Hardware.objects.filter(is_deleted=True)
+        customers = Customer.objects.filter(is_deleted=True)
+
+        # Serialize the data
+        subscription_data = SubscriptionDetailSerializer(subscriptions, many=True).data
+        hardware_data = HardwareSerializer(hardware, many=True).data
+        customer_data = CustomerSerializer(customers, many=True).data
+
+        # Combine the data
+        data = {
+            'subscriptions': subscription_data,
+            'hardware': hardware_data,
+            'customers': customer_data,
+        }
+
+        return Response(data, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        # Restore a soft-deleted item
+        item_type = request.data.get('type')
+        item_id = request.data.get('id')
+
+        if item_type == 'subscription':
+            item = Subscription.objects.get(id=item_id)
+        elif item_type == 'hardware':
+            item = Hardware.objects.get(id=item_id)
+        elif item_type == 'customer':
+            item = Customer.objects.get(id=item_id)
+        else:
+            return Response({'error': 'Invalid item type'}, status=status.HTTP_400_BAD_REQUEST)
+
+        item.restore()  # Call the restore method
+        return Response({'message': f'{item_type} restored successfully'}, status=status.HTTP_200_OK)

@@ -470,6 +470,14 @@ class HardwareSerializer(serializers.ModelSerializer):
 
         return hardware
     
+    def to_representation(self, instance):
+        """Remove null values and set a single 'name' field."""
+        data = super().to_representation(instance)
+        
+        # Remove null values
+        data = {key: value for key, value in data.items() if value is not None}
+        return data
+    
 # class HardwareSerializer(serializers.ModelSerializer):
 #     warranty = WarrantySerializer(required=False)
 #     purchase = PurchaseSerializer(required=False)

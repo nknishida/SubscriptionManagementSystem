@@ -299,6 +299,18 @@ class Hardware(models.Model):
 
     def __str__(self):
         return f"{self.hardware_type} ({self.serial_number})"
+    
+    def soft_delete(self):
+        """Soft delete: Hide subscription without affecting status."""
+        self.is_deleted = True
+        self.deleted_at = now()
+        self.save(update_fields=['is_deleted', 'deleted_at'])
+
+    def restore(self):
+        """Restore subscription from soft delete."""
+        self.is_deleted = False
+        self.deleted_at = None
+        self.save(update_fields=['is_deleted', 'deleted_at'])
 
     class Meta:
         db_table = 'hardware'
@@ -634,9 +646,9 @@ class ReminderHardware(models.Model):
     reminder = models.ForeignKey(Reminder, on_delete=models.CASCADE, related_name='hardware_reminder')
     hardware = models.ForeignKey('Hardware', on_delete=models.CASCADE)
 
-# class ReminderCustomer(models.Model):
-#     reminder = models.ForeignKey(Reminder, on_delete=models.CASCADE, related_name='customer_reminder')
-#     customer = models.ForeignKey('Customer', on_delete=models.CASCADE)
+class ReminderCustomer(models.Model):
+    reminder = models.ForeignKey(Reminder, on_delete=models.CASCADE, related_name='customer_reminder')
+    customer = models.ForeignKey('Customer', on_delete=models.CASCADE)
 
 class Customer(models.Model):
     # STATUS_CHOICES = [
@@ -675,6 +687,18 @@ class Customer(models.Model):
 
     def __str__(self):
         return self.customer_name
+    
+    def soft_delete(self):
+        """Soft delete: Hide subscription without affecting status."""
+        self.is_deleted = True
+        self.deleted_at = now()
+        self.save(update_fields=['is_deleted', 'deleted_at'])
+
+    def restore(self):
+        """Restore subscription from soft delete."""
+        self.is_deleted = False
+        self.deleted_at = None
+        self.save(update_fields=['is_deleted', 'deleted_at'])
 
     class Meta:
         db_table = 'customer'
