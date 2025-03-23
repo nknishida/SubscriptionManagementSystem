@@ -184,23 +184,68 @@ from django.contrib.auth import get_user_model
 
 User = get_user_model()
 
+# class CreateUserAPIView(APIView):
+#     permission_classes = [AllowAny] 
+
+#     def post(self, request):
+#         email = request.data.get("email")
+#         username = request.data.get("username")
+#         password = request.data.get("password")
+
+#         if not email or not username or not password:
+#             return Response({"error": "All fields are required"}, status=status.HTTP_400_BAD_REQUEST)
+
+#         if User.objects.filter(email=email).exists():
+#             return Response({"error": "Email already exists"}, status=status.HTTP_400_BAD_REQUEST)
+
+#         user = User.objects.create_user(email=email, username=username, password=password)
+#         return Response({"message": "User created successfully","status":status.HTTP_201_CREATED}, status=status.HTTP_201_CREATED)
+import random
+import string
+from django.contrib.auth.models import User
+
 class CreateUserAPIView(APIView):
-    permission_classes = [AllowAny] 
+    permission_classes = [IsAuthenticated]
+
+    def generate_random_password(self, length=12):
+        """Generate a random password with letters, digits, and special characters"""
+        characters = string.ascii_letters + string.digits + string.punctuation
+        return ''.join(random.choices(characters, k=length))
 
     def post(self, request):
         email = request.data.get("email")
         username = request.data.get("username")
-        password = request.data.get("password")
+        role = request.data.get("role")
 
-        if not email or not username or not password:
-            return Response({"error": "All fields are required"}, status=status.HTTP_400_BAD_REQUEST)
+        if not email or not username or not role:
+            return Response({"error": "Username, role, and email are required"}, status=status.HTTP_400_BAD_REQUEST)
 
         if User.objects.filter(email=email).exists():
             return Response({"error": "Email already exists"}, status=status.HTTP_400_BAD_REQUEST)
 
-        user = User.objects.create_user(email=email, username=username, password=password)
-        return Response({"message": "User created successfully","status":status.HTTP_201_CREATED}, status=status.HTTP_201_CREATED)
+        # Generate a random password
+        random_password = self.generate_random_password()
 
+        # Create user based on role
+        if role.lower() == "superuser":
+            user = User.objects.create_superuser(username=username, email=email, password=random_password)
+        else:
+            user = User.objects.create_user(username=username, email=email, password=random_password)
+
+        # Send email with generated password
+        send_mail(
+            subject="Your New Account Credentials",
+            message=f"Hello {username},\n\nYour account has been created successfully.\n\n"
+                    f"Username: {username}\n"
+                    f"Password: {random_password}\n\n"
+                    f"Please change your password after logging in.",
+            from_email=settings.DEFAULT_FROM_EMAIL,  # Replace with your actual email
+            recipient_list=[email],
+            fail_silently=False,
+        )
+
+        return Response({"message": "User created successfully. Password sent to email.", "status": status.HTTP_201_CREATED},
+                        status=status.HTTP_201_CREATED)
 
 from django.db.models import Count
 from rest_framework.response import Response
