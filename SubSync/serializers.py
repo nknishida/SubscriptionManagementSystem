@@ -49,6 +49,7 @@ class PasswordResetSerializer(serializers.Serializer):
     new_password = serializers.CharField(min_length=8, write_only=True, help_text="New password (min. 8 characters)")
 
 class ProviderSerializer(serializers.ModelSerializer):
+
     # class Meta:
     #     model = Provider
     #     fields = '__all__'
@@ -60,7 +61,7 @@ class ProviderSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Provider
-        fields = ['id','providerName', 'providerContact', 'providerEmail', 'websiteLink']
+        fields = ['providerName', 'providerContact', 'providerEmail', 'websiteLink']
 
     def validate_providerEmail(self, value):
         """Check if the email is already used"""
