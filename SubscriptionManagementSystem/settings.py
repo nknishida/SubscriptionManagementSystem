@@ -32,8 +32,8 @@ import os
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'fallback-secret-key')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-# DEBUG = False
+# DEBUG = True
+DEBUG = False
 
 ALLOWED_HOSTS = ['*']
 # ALLOWED_HOSTS = ['192.168.251.92','192.168.251.108','127.0.0.1']
@@ -111,8 +111,14 @@ REST_FRAMEWORK = {
 #     "http://192.168.251.92:3000", # Your frontend (React)
     
 # ]
+CORS_ALLOWED_ORIGINS = [
+    "https://subsync-project.vercel.app",
+    "http://localhost:3000",  # For local testing
+]
+CORS_ALLOW_CREDENTIALS = True
 
-CORS_ALLOW_ALL_ORIGINS = True
+
+# CORS_ALLOW_ALL_ORIGINS = True
 
 AUTH_USER_MODEL = 'SubSync.User'
 
