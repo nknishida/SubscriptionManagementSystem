@@ -34,7 +34,8 @@ def handle_reminder_creation(sender, instance, created, **kwargs):
                 #     schedule_reminder_tasks(subscription, instance)
                 if hasattr(reminder_subscription, "subscription"):
                     subscription = reminder_subscription.subscription  # Correctly get Subscription
-                    logger.info(f"Scheduling tasks for subscription ID: {subscription.id}")
+                    user_id = subscription.user.id if hasattr(subscription, "user") else None  # Extract user ID
+                    logger.info(f"Scheduling tasks for subscription ID: {subscription.id}, User ID: {user_id}")
                     schedule_reminder_tasks(subscription, instance)  # Pass correct object
                 else:
                     logger.error(f"ReminderSubscription {reminder_subscription.id} does not have a linked Subscription")
@@ -42,8 +43,9 @@ def handle_reminder_creation(sender, instance, created, **kwargs):
             # Check if the reminder is related to hardware
             elif hasattr(instance, 'hardware_reminder') and instance.hardware_reminder.exists():
                 hardware = instance.hardware_reminder.first()
+                user_id = hardware.user.id if hasattr(hardware, "user") else None 
                 if hardware:
-                    logger.info(f"Scheduling tasks for hardware ID: {hardware.id}")
+                    logger.info(f"Scheduling tasks for hardware ID: {hardware.id},User id:{user_id}")
                     schedule_reminder_tasks(hardware, instance)
 
         except Exception as e:

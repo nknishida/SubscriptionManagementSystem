@@ -872,10 +872,18 @@ class SubscriptionDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = SubscriptionDetailSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def update(self, request, *args, **kwargs):
+        # Print the incoming update data
+        print("Update data received from frontend:", request.data)
+        
+        # Call the parent class's update method to handle the update as usual
+        return super().update(request, *args, **kwargs)
+    
     def perform_destroy(self, instance):
         """
         Override the delete method to perform a soft delete instead of a hard delete.
         """
+        print(f"Soft deleting subscription with ID: {instance.id}")
         instance.soft_delete(deleted_by=self.request.user) 
 
 # from datetime import datetime, timedelta

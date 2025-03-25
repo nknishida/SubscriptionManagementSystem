@@ -186,8 +186,12 @@ logger = logging.getLogger(__name__)
 #     except Exception as e:
 #         logger.error(f"Error sending reminder notifications: {e}")
 
+# from django.contrib.auth import get_user_model
+
+# User = get_user_model()
+
 @shared_task
-def send_reminder_notification(reminder_id):
+def send_reminder_notification(reminder_id,user_id=None):
     """Send reminder notifications based on the selected notification method."""
     print("\n*************************************************************************************************************************************")
 
@@ -195,6 +199,9 @@ def send_reminder_notification(reminder_id):
 
     try:
         reminder = Reminder.objects.get(id=reminder_id)
+        user = User.objects.get(id=user_id) if user_id else None  # Fetch user details
+        # Extract user phone numbers if available
+        user_phone_number = user.phone_numbers.split(",") if user and user.phone_numbers else []
         
         # Determine whether the reminder is for a Subscription or Hardware
         subscription = reminder.subscription_reminder.first().subscription if reminder.subscription_reminder.exists() else None
@@ -262,17 +269,19 @@ def send_reminder_notification(reminder_id):
             else:
                 logger.warning("No recipients found for email notification.")
 
-        if reminder.notification_method in ["sms", "both"]:
-            phone_numbers = reminder.phone_numbers.split(",") if reminder.phone_numbers else []
-            if phone_numbers:
-                try:
-                    logger.info(f"Sending SMS reminder to: {phone_numbers}")
-                    send_sms_notification(phone_numbers, message)
-                    logger.info("SMS notification sent successfully.")
-                except Exception as e:
-                    logger.error(f"Failed to send SMS notification: {e}")
-            else:
-                logger.warning("No phone numbers found for SMS notification.")
+        if reminder.notification_method in ["sms", "both"] and user_phone_number :
+            # user_phone_number = request.user.phone_number
+            # phone_numbers = reminder.phone_numbers.split(",") if reminder.phone_numbers else []
+            # if user_phone_number:
+                # phone_numbers = [user_phone_number]
+            try:
+                logger.info(f"Sending SMS reminder to: {user_phone_number}")
+                send_sms_notification(user_phone_number, message)
+                logger.info("SMS notification sent to {user_phone_number} successfully.")
+            except Exception as e:
+                logger.error(f"Failed to send SMS notification: {e}")
+        else:
+            logger.warning("No phone numbers found for SMS notification.")
 
         try:
             logger.info(f"Sending in-app notification for {entity_type}.")
@@ -400,7 +409,7 @@ def send_in_app_notification(entity, message):
 from celery import shared_task
 from django.utils import timezone
 from datetime import timedelta
-from .models import Subscription, Hardware, Customer
+from .models import Subscription, Hardware, Customer, User
 
 @shared_task
 def delete_old_recycle_bin_items():

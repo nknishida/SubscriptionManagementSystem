@@ -64,6 +64,7 @@ class ProviderSerializer(serializers.ModelSerializer):
     class Meta:
         model = Provider
         fields = ['providerName', 'providerContact', 'providerEmail', 'websiteLink']
+        # fields=['all']
 
     def validate_providerEmail(self, value):
         """Check if the email is already used"""

@@ -505,6 +505,7 @@ class Reminder(models.Model):
     )
     reminder_date = models.DateField(blank=True, null=True, help_text="Next reminder date.")
     created_at = models.DateTimeField(auto_now_add=True)
+    
     updated_at = models.DateTimeField(auto_now=True)
     reminder_type = models.CharField(max_length=50, choices=REMINDER_TYPE_CHOICES, default='renewal')
     scheduled_task_id = models.CharField(max_length=255, blank=True, null=True)

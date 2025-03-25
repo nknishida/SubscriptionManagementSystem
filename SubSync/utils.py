@@ -91,6 +91,10 @@ def schedule_reminder_tasks(entity, reminder):
     logger.info(f"Scheduling reminder tasks for reminder ID: {reminder.id}")
 
     try:
+        # Fetch user ID from the reminder
+        user_id = entity.user.id if hasattr(entity, "user") else None 
+        print(user_id)
+
         # Determine if entity is a Subscription or Hardware
         entity_type = "Subscription" if isinstance(entity, Subscription) else "Hardware"
         logger.info(f"Scheduling reminders for {entity_type} ID: {entity.id} ")
@@ -108,7 +112,7 @@ def schedule_reminder_tasks(entity, reminder):
             logger.info(f"Task ETA: {datetime.combine(date, DEFAULT_RENEWAL_TIME)}")
 
             # Schedule the task and store the task ID
-            task = send_reminder_notification.apply_async(args=[reminder.id],task_eta=task_eta)
+            task = send_reminder_notification.apply_async(args=[reminder.id, user_id] ,task_eta=task_eta)
             task_ids.append(task.id)
 
         reminder.scheduled_task_id = ",".join(task_ids)
