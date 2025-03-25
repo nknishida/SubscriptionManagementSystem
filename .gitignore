@@ -1,9 +1,9 @@
 SubscriptionManagementSystem/settings.py
-SubscriptionManagementSystem/__pycache__/
+SubscriptionManagementSystem/__pycache__
 SubSync/m1
 SubSync/m2
-SubSync/__pycache__/
-
+SubSync/__pycache__
 
 .env
+
 media/profile_pics
