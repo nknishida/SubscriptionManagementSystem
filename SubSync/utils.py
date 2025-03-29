@@ -42,8 +42,6 @@ from SubSync.tasks import send_reminder_notification
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_RENEWAL_TIME = time(14, 52, 0)
-
 # def schedule_reminder_tasks(subscription, reminder):
 #     """Schedule tasks for all reminder dates."""
 #     print("\n*************************************************************************************************************************************")
@@ -83,6 +81,7 @@ DEFAULT_RENEWAL_TIME = time(14, 52, 0)
 
 #     except Exception as e:
 #         logger.error(f"Error scheduling reminder tasks: {e}")
+DEFAULT_RENEWAL_TIME = time(11, 0, 0)
 
 def schedule_reminder_tasks(entity, reminder):
     """Schedule tasks for all reminder dates."""
@@ -93,7 +92,7 @@ def schedule_reminder_tasks(entity, reminder):
     try:
         # Fetch user ID from the reminder
         user_id = entity.user.id if hasattr(entity, "user") else None 
-        print(user_id)
+        print("User ID:",user_id)
 
         # Determine if entity is a Subscription or Hardware
         entity_type = "Subscription" if isinstance(entity, Subscription) else "Hardware"
@@ -106,9 +105,9 @@ def schedule_reminder_tasks(entity, reminder):
         task_ids = []  # List to store task IDs
 
         for date in reminder_dates:
-            logger.info(f"Scheduling task for date: {date} at time: {DEFAULT_RENEWAL_TIME}")
+            # logger.info(f"Scheduling task for date: {date} at time: {DEFAULT_RENEWAL_TIME}")
             task_eta = timezone.make_aware(datetime.combine(date, DEFAULT_RENEWAL_TIME))
-            logger.info(f"Scheduling reminder task for {task_eta}")
+            # logger.info(f"Scheduling reminder task for {task_eta}")
             logger.info(f"Task ETA: {datetime.combine(date, DEFAULT_RENEWAL_TIME)}")
 
             # Schedule the task and store the task ID

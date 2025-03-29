@@ -27,16 +27,24 @@ class LoginAPIView(APIView):
 
         if user is None:
             return Response({
-                'message': 'Invalid email or password. Please try again.',
+                'message': 'Invalid email or password.',
                 'status': status.HTTP_401_UNAUTHORIZED
-                
-                , 'error': 'Invalid email or password'
+                ,'error': 'Invalid email or password'
                 },
                   status=status.HTTP_401_UNAUTHORIZED)
+        
+         # Check if user is active
+        if not user.is_active:
+            return Response({
+                'message': 'Account is inactive. Please contact administrator.',
+                'status': status.HTTP_403_FORBIDDEN,
+                'error': 'Account inactive'
+            }, status=status.HTTP_403_FORBIDDEN)
 
         refresh = RefreshToken.for_user(user)
         return Response({
             'message': 'Login successful',
+            'username': user.username, 
             'token': str(refresh.access_token),
             'refresh': str(refresh),
             'status': status.HTTP_200_OK,
@@ -106,7 +114,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny
-from .serializers import CustomerSerializer, HardwareSerializer, PasswordResetSerializer, ServerUsageSerializer, SubscriptionDetailSerializer, SubscriptionWarningSerializer
+from .serializers import CustomerSerializer, HardwareSerializer, PasswordResetSerializer, ServerUsageSerializer, SubscriptionDetailSerializer, SubscriptionUpdateSerializer, SubscriptionWarningSerializer, UserSerializer
 
 User = get_user_model()
 
@@ -156,26 +164,71 @@ class ChangePasswordView(APIView):
     permission_classes = [IsAuthenticated]  # Only logged-in users can change their password
 
     def post(self, request):
+        logger.info(f"Request data: {request.data}")
+
         user = request.user  # Get the currently logged-in user
-        old_password = request.data.get("old_password")
-        new_password = request.data.get("new_password")
+        old_password = request.data.get("currentPassword")
+        new_password = request.data.get("newPassword")
+        print(f"current password:{old_password} , new password:{new_password}")
+        logger.info("Starting password validation checks...")
+
+        if not old_password or not new_password:
+            logger.info("Missing required fields in password change request")
+            logger.info(f"Received fields: {list(request.data.keys())}")
+            return Response(
+                {"error": "Both old_password and new_password are required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         # Check if old password is correct
         if not user.check_password(old_password):
-            return Response({"error": "Old password is incorrect"}, status=status.HTTP_400_BAD_REQUEST)
+            logger.info(f"Invalid old password provided for user {user.username}")
+            return Response({"message": "Old password is incorrect",'status':status.HTTP_400_BAD_REQUEST}, status=status.HTTP_400_BAD_REQUEST)
 
         # Validate new password (checks Django password validators)
         try:
+            logger.info("Validating new password complexity...")
             validate_password(new_password, user)
+            logger.info("New password meets complexity requirements")
         except ValidationError as e:
-            return Response({"error": e.messages}, status=status.HTTP_400_BAD_REQUEST)
+            # error_messages = {
+            #     'The password is too similar to the username.': 'Password should not contain your username',
+            #     'This password is too short.': 'Password must be at least 8 characters',
+            #     'This password is too common.': 'Password is too common',
+            #     'This password is entirely numeric.': 'Password cannot be all numbers'
+            # }
+            
+            # formatted_errors = []
+            # for error in e.messages:
+            #     formatted_errors.append(error_messages.get(error, error))
+            
+            logger.info(f"Password validation failed for user {user.username}: {e.messages}")
+            
+            # return Response(
+            #     {
+            #         "success": False,
+            #         "error": "Password validation failed",
+            #         "validation_errors": formatted_errors,
+            #         'status':status.HTTP_400_BAD_REQUEST
+            #     },
+            #     status=status.HTTP_400_BAD_REQUEST
+            # )
+            
+            return Response({"message": e.messages,'status':status.HTTP_400_BAD_REQUEST}, status=status.HTTP_400_BAD_REQUEST)
 
         # Update password
-        user.set_password(new_password)
-        user.save()
-
-        return Response({"message": "Password updated successfully",
-                         'status': status.HTTP_200_OK,}, status=status.HTTP_200_OK)
+        try:
+            logger.info("Attempting to set new password...")
+            user.set_password(new_password)
+            user.save()
+            logger.info(f"Password successfully changed for user {user.username}")
+            return Response({"message": "Password updated successfully",'status': status.HTTP_200_OK,}, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.info(f"Error changing password for user {user.username}: {str(e)}")
+            return Response(
+                {"error": "An unexpected error occurred while changing password"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -213,39 +266,54 @@ class CreateUserAPIView(APIView):
         return ''.join(random.choices(characters, k=length))
 
     def post(self, request):
+        print(request.data)
         email = request.data.get("email")
         username = request.data.get("name")
         role = request.data.get("role")
+        phone_number = request.data.get("phoneNumber")
 
         if not email or not username or not role:
-            return Response({"error": "Username, role, and email are required"}, status=status.HTTP_400_BAD_REQUEST)
-
+            return Response({"message": "Username, role, and email are required","status":status.HTTP_400_BAD_REQUEST}, status=status.HTTP_400_BAD_REQUEST)
+        
         if User.objects.filter(email=email).exists():
-            return Response({"error": "Email already exists"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"message": "Email already exists","status": status.HTTP_400_BAD_REQUEST}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            with transaction.atomic():
 
-        # Generate a random password
-        random_password = self.generate_random_password()
+                if User.objects.filter(email=email).exists():
+                    return Response({"message": "Email already exists","status":status.HTTP_400_BAD_REQUEST}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Create user based on role
-        if role.lower() == "super":
-            user = User.objects.create_superuser(username=username, email=email, password=random_password)
-        else:
-            user = User.objects.create_user(username=username, email=email, password=random_password)
+                # Generate a random password
+                random_password = self.generate_random_password()
 
-        # Send email with generated password
-        send_mail(
-            subject="Your New Account Credentials",
-            message=f"Hello {username},\n\nYour account has been created successfully.\n\n"
-                    f"Username: {username}\n"
-                    f"Password: {random_password}\n\n"
-                    f"Please change your password after logging in.",
-            from_email=settings.DEFAULT_FROM_EMAIL,  # Replace with your actual email
-            recipient_list=[email],
-            fail_silently=False,
-        )
+                # Create user based on role
+                if role.lower() == "super":
+                    user = User.objects.create_superuser(username=username, email=email, password=random_password)
+                else:
+                    user = User.objects.create_user(username=username, email=email, password=random_password)
 
-        return Response({"message": "User created successfully. Password sent to email.", "status": status.HTTP_201_CREATED},
-                        status=status.HTTP_201_CREATED)
+                if phone_number:
+                    user.phone_numbers = phone_number
+                    user.save()
+
+                # Send email with generated password
+                send_mail(
+                    subject="Your New Account Credentials",
+                    message=f"Hello {username},\n\nYour account has been created successfully.\n\n"
+                            f"Username: {username}\n"
+                            f"Password: {random_password}\n\n"
+                            f"Please change your password after logging in.",
+                    from_email='subsyncproject@gmail.com',  # Replace with your actual email
+                    recipient_list=[email],
+                    fail_silently=False,
+                )
+
+            return Response({"message": "User created successfully. Password sent to email.", "status": status.HTTP_201_CREATED},status=status.HTTP_201_CREATED)
+        
+        except Exception as e:
+            print(str(e))
+            return Response({"message": "Failed to create user","error": str(e),"status": status.HTTP_500_INTERNAL_SERVER_ERROR}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 from django.db.models import Count
 from rest_framework.response import Response
@@ -254,7 +322,7 @@ from rest_framework.permissions import IsAuthenticated
 from SubSync.models import Subscription, Hardware 
 
 class DashboardOverview(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         total_active_subscriptions = Subscription.objects.filter(status="Active").count()
@@ -297,7 +365,7 @@ from django.utils.timezone import now
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from .models import Customer, HardwareServers, ReminderHardware, Subscription
+from .models import Computer, Customer, ReminderHardware, Subscription
 
 class SubscriptionCountView(APIView):
     """Fetch the count of active and expired subscriptions."""
@@ -423,7 +491,8 @@ from rest_framework.response import Response
 from rest_framework import status
 from .models import Hardware, Provider
 from .serializers import ProviderSerializer
-from rest_framework.permissions import AllowAny
+from django.db.utils import IntegrityError
+
 
 class ProviderCreateView(generics.CreateAPIView):
     queryset = Provider.objects.all()
@@ -431,24 +500,35 @@ class ProviderCreateView(generics.CreateAPIView):
     permission_classes = [IsAuthenticated]
 
     def create(self, request, *args, **kwargs):
+        # provider_name = request.data.get("provider_name")
+
+        # # Check if provider already exists
+        # if Provider.objects.filter(provider_name=provider_name).exists():
+        #     return Response({"error": "Provider already exists!"}, status=status.HTTP_400_BAD_REQUEST)
+        
         print("Request Data:", request.data)
         serializer = self.get_serializer(data=request.data)
         
         if serializer.is_valid():
-            serializer.save()
-            return Response(
-                { "status": status.HTTP_201_CREATED,
-                 "data": serializer.data},
-                status=status.HTTP_201_CREATED
-            )
+            try:
+                serializer.save()
+                return Response(
+                    { "status": status.HTTP_201_CREATED,
+                    "message": "Provider created successfully",
+                    "data": serializer.data},
+                    status=status.HTTP_201_CREATED
+                )
+            except IntegrityError as e:  # Catch IntegrityError
+                print("Database Error:", str(e))
+                return Response(
+                    {"message": "Provider already exists", "status": status.HTTP_400_BAD_REQUEST},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
         
-        # logger.error(f"Validation Error: {serializer.errors}")
-        # print("Validation Errors:", serializer.errors)  # Debugging
-
         print("Serializer Errors:", serializer.errors)  # Print detailed errors
         return Response(
-            {"status": "error", "code": status.HTTP_400_BAD_REQUEST, "errors": serializer.errors},
-            status=status.HTTP_400_BAD_REQUEST
+            {"message": "provider already exists", "status": status.HTTP_400_BAD_REQUEST, "errors": serializer.errors},
+            status=status.HTTP_400_BAD_REQUEST,message="provider already exists"
         )
     
 from rest_framework import generics
@@ -457,17 +537,35 @@ from .serializers import ProviderSerializer
 from rest_framework.permissions import AllowAny
 
 class ProviderListView(generics.ListAPIView):
-    # queryset = Provider.objects.all()
-    queryset = Provider.objects.all().only("id", "provider_name")
+    queryset = Provider.objects.all()
+    # queryset = Provider.objects.all().only("id", "provider_name")
     serializer_class = ProviderSerializer
     permission_classes = [IsAuthenticated]  # Ensure anyone can access it
 
     def get_queryset(self):
-        queryset = Provider.objects.only("id", "provider_name")
+        queryset = Provider.objects.all()
+        # queryset = Provider.objects.only("id", "provider_name")
         print("\n*************************************************************************************************************************************")
         print("Providers List:", list(queryset.values("id", "provider_name")))  # Print all providers
         print("\n************************************************************************************************************************************")
         return queryset
+    
+# from rest_framework import generics, filters
+# from django_filters.rest_framework import DjangoFilterBackend
+
+# class ProviderListView(generics.ListAPIView):
+#     serializer_class = ProviderSerializer
+#     permission_classes = [IsAuthenticated]
+#     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+#     filterset_fields = ['category']  # Enable filtering by category
+#     # search_fields = ['provider_name']  # Optional: enable search by name
+
+#     def get_queryset(self):
+#         queryset = Provider.objects.all()
+#         category = self.request.query_params.get('category')
+#         if category:
+#             queryset = queryset.filter(category=category)
+#         return queryset
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -498,6 +596,234 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
 from .models import ReminderSubscription
 
+# class SubscriptionCreateView(generics.CreateAPIView):
+#     queryset = Subscription.objects.all()
+#     serializer_class = SubscriptionSerializer
+#     permission_classes = [IsAuthenticated]
+
+#     def create(self, request, *args, **kwargs):
+#         print("\n***********************************************************************************************************************************")
+#         print("Request Data:", request.data)
+#         print("\n***********************************************************************************************************************************")
+
+#         data = request.data.copy()
+
+#         # Convert frontend camelCase to backend snake_case
+#         field_mapping = {
+#             "subscriptionCategory": "subscription_category",
+#             # "paymentStatus": "payment_status",
+#             "status": "status",
+#             # "subscriptionId": "subscription_id",
+#             "startDate": "start_date",
+#             "endDate": "end_date",
+#             "paymentMethod": "payment_method",
+#             "notificationMethod":"notification_method",
+#             # "nextPaymentDate":"next_payment_date",
+#             "customMessage":"custom_message",
+#             "billingCycle":"billing_cycle",
+            
+#             "daysBeforeEnd":"optional_days_before",
+#             "firstReminderMonth":"reminder_months_before",
+#             "reminderDay":"reminder_days_before",
+
+#             # "lastPaymentDate":"last_payment_date",
+#             # "providerContact":"contact_phone",
+#             # "providerEmail":"contact_email",
+#             # "providerName":"provider_name",
+#             # "websiteLink":"website",
+#             # "userId": "user"  # Ensure user ID is included
+#         }
+
+#         for frontend_key, backend_key in field_mapping.items():
+#             if frontend_key in data:
+#                 value = data.pop(frontend_key)
+#                 # Convert empty string to None for integer fields
+#                 if backend_key in ["optional_days_before", "reminder_months_before", "reminder_days_before"] and value == "":
+#                     data[backend_key] = None  # or use 0 if needed
+#                 else:
+#                     data[backend_key] = value
+
+#         print("Modified Data:", data)
+#         print("\n***********************************************************************************************************************************")
+
+#         # ✅ Prevent duplicate subscriptions for the same user, provider, and category with overlapping dates
+#         existing_subscription = Subscription.objects.filter(
+#             user=request.user,
+#             provider_id=data.get("provider"),
+#             subscription_category=data.get("subscription_category"),
+#             # start_date__lte=data.get("end_date"),
+#             # end_date__gte=data.get("start_date"),
+#             is_deleted=False  # Ignore soft-deleted records
+#         ).exists()
+
+#         if existing_subscription:
+#             return Response({"error": "A similar active subscription already exists for this provider and category."}, status=status.HTTP_400_BAD_REQUEST)
+
+#         # ✅ Set 'status' dynamically
+#         data["status"] = "Active"
+#         # data["reminder_type"] = "renewal"
+#         data["payment_status"] = "pending"
+#         # data["reminder_time"] = "14:45:00"
+#         # data["reminder_status"] = "pending"
+#         # ✅ Assign 'user' field (assuming user is the logged-in user)
+#         data["user"] = request.user.id
+#         # data["created_by"] = request.user.id
+#         print("Final Data Before Saving:", data)
+#         print("\n***********************************************************************************************************************************")
+
+#         provider_id = data.get("providerid")  # Get provider ID from request
+#         print("🔍 Selected Provider ID:", provider_id)
+
+#         if not provider_id:
+#             return Response({"error": "Provider ID is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+#         # Fetch the provider instance from DB
+#         try:
+#             provider = Provider.objects.get(id=provider_id)
+#         except Provider.DoesNotExist:
+#             return Response({"error": "Invalid Provider ID."}, status=status.HTTP_400_BAD_REQUEST)
+
+#         # Assign provider to subscription data
+#         data["provider"] = provider.id
+
+#         # Extract additional fields separately
+#         additional_fields = data.pop("additionalDetails", {})
+
+#         # Extract and remove reminder-related fields before subscription creation
+#         reminder_fields = [
+#             # "reminder_type", 
+#             "reminder_days_before","reminder_months_before", "reminder_day_of_month","notification_method", "recipients", "custom_message", "optional_days_before"
+#         ]
+#         reminder_data = {key: data.pop(key) for key in reminder_fields if key in data}
+#         print(reminder_data)
+
+#         # # ✅ Apply default reminder settings if none provided
+#         # if not any(reminder_data.values()):
+
+#         #     if subscription.billing_cycle in ["weekly", "monthly"]:
+#         #         reminder_data["reminder_days_before"] = 7  # Default to 7 days before due date
+#         #     else:
+#         #         reminder_data["reminder_months_before"] = 1  # Default to 1 month before
+#         #         reminder_data["reminder_day_of_month"] = 1  # Default to 1st day of the month
+
+#         #     reminder_data["notification_method"] = "email"  # Default notification method
+#         #     reminder_data["reminder_type"] = "renewal"  # Default reminder type
+#         #     reminder_data["reminder_status"] = "pending"
+#         #     reminder_data["recipients"] = request.user.email  # Default to user's email
+#         #     reminder_data["custom_message"] = "Your subscription is due soon. Please renew it in time."  # Default message
+#         #     print(reminder_data)
+
+#         # Validate and create subscription
+#         serializer = self.get_serializer(data=data)
+#         if serializer.is_valid():
+#             try:
+#                 subscription = serializer.save()
+#                 print(subscription)
+
+#                 # ✅ Apply default reminder settings if none provided
+#                 if not any(reminder_data.values()):
+
+#                     if subscription.billing_cycle in ["weekly", "monthly"]:
+#                         reminder_data["reminder_days_before"] = 7  # Default to 7 days before due date
+#                     else:
+#                         reminder_data["reminder_months_before"] = 1  # Default to 1 month before
+#                         reminder_data["reminder_day_of_month"] = 1  # Default to 1st day of the month
+
+#                     reminder_data["notification_method"] = "email"  # Default notification method
+#                     reminder_data["reminder_type"] = "renewal"  # Default reminder type
+#                     reminder_data["reminder_status"] = "pending"
+#                     reminder_data["recipients"] = request.user.email  # Default to user's email
+#                     reminder_data["custom_message"] = "Your subscription is due soon. Please renew it in time."  # Default message
+#                     print(reminder_data)
+
+#                     # Handle category-specific data
+#                     category = subscription.subscription_category
+#                     if category == "Software":
+#                         SoftwareSubscriptions.objects.create(subscription=subscription, **additional_fields)
+#                     elif category == "Billing":
+#                         utility_instance = Utilities(subscription=subscription, **additional_fields)
+#                         try:
+#                             utility_instance.clean()
+#                             utility_instance.save()
+#                         except ValidationError as e:
+#                             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+#                     elif category == "Domain":
+#                         Domain.objects.create(subscription=subscription, **additional_fields)
+#                     elif category == "Server":
+#                         Servers.objects.create(subscription=subscription, **additional_fields)
+
+#                     # Create the reminder entry if reminder data exists
+#                     # if reminder_data:
+#                         # subscription_cycle = reminder_data.get("subscription_cycle")
+
+#                         # Validate reminder fields based on subscription cycle
+#                         # if subscription.billing_cycle in ["weekly", "monthly"]:
+#                         #     reminder_days_before = reminder_data.get("reminder_days_before")
+#                         #     print("Reminder Days Before:", reminder_days_before)
+
+#                         #     if reminder_days_before is None or reminder_days_before == "":
+#                         #         return Response(
+#                         #             {"error": "reminder_days_before is required for weekly/monthly cycles."},
+#                         #             status=status.HTTP_400_BAD_REQUEST
+#                         #         )
+#                             # Remove unnecessary fields
+#                         #     reminder_data.pop("reminder_months_before", None)
+#                         #     reminder_data.pop("reminder_day_of_month", None)
+#                         # else: # Long-term cycles (e.g., yearly, custom)
+#                         #     reminder_months_before = reminder_data.get("reminder_months_before")
+#                         #     reminder_day_of_month = reminder_data.get("reminder_day_of_month")
+                            
+#                         #     if subscription.billing_cycle not in ["weekly", "monthly"] and (not reminder_months_before or not reminder_day_of_month):
+
+#                         #         return Response(
+#                         #             {"error": "reminder_months_before and reminder_day_of_month are required for long-term cycles."},
+#                         #             status=status.HTTP_400_BAD_REQUEST
+#                         #         )
+
+#                     if reminder_data:
+#                         # Create Reminder
+#                         reminder = Reminder.objects.create(
+#                             # subscription_cycle=subscription_cycle,
+#                             reminder_days_before=reminder_data.get("reminder_days_before"),
+#                             reminder_months_before=reminder_data.get("reminder_months_before"),
+#                             reminder_day_of_month=reminder_data.get("reminder_day_of_month"),
+#                             optional_days_before=reminder_data.get("optional_days_before"),
+#                             notification_method=reminder_data.get("notification_method"),
+#                             recipients=reminder_data.get("recipients"),
+#                             custom_message=reminder_data.get("custom_message"),
+#                             reminder_type=reminder_data.get("reminder_type"),
+#                         )
+
+#                         # Link the reminder with the subscription
+#                         ReminderSubscription.objects.create(reminder=reminder, subscription=subscription)
+
+#                         # Calculate and save the reminder_date
+#                         reminder_dates = reminder.calculate_all_reminder_dates(subscription)
+#                         print("Reminder Dates:", reminder_dates)
+
+#                         if reminder_dates:
+#                             print("First Reminder Date:", reminder_dates[0])
+#                         else:
+#                             print("❌ No Reminder Dates Generated!")
+#                             # return Response({"error": "Reminder dates could not be generated."}, status=status.HTTP_400_BAD_REQUEST)
+
+#                     if reminder_dates:
+#                         reminder.reminder_date = reminder_dates[0]  # Assign the first reminder date
+#                         reminder.save()
+#                         print("Reminder Date Saved:", reminder.reminder_date)
+                    
+#                     return Response({'code': status.HTTP_201_CREATED, 'data': serializer.data}, status=status.HTTP_201_CREATED)
+                
+#             except Exception as e:
+#                 print(f"Error creating subscription: {str(e)}")
+#                 return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+#         if not serializer.is_valid():
+#             print("Serializer Errors:", serializer.errors)  # Print detailed errors
+#             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+from django.db import transaction
+
 class SubscriptionCreateView(generics.CreateAPIView):
     queryset = Subscription.objects.all()
     serializer_class = SubscriptionSerializer
@@ -513,195 +839,150 @@ class SubscriptionCreateView(generics.CreateAPIView):
         # Convert frontend camelCase to backend snake_case
         field_mapping = {
             "subscriptionCategory": "subscription_category",
-            # "paymentStatus": "payment_status",
             "status": "status",
-            # "subscriptionId": "subscription_id",
             "startDate": "start_date",
             "endDate": "end_date",
             "paymentMethod": "payment_method",
-            "notificationMethod":"notification_method",
-            # "nextPaymentDate":"next_payment_date",
-            "customMessage":"custom_message",
-            "billingCycle":"billing_cycle",
-            
-            "daysBeforeEnd":"optional_days_before",
-            "firstReminderMonth":"reminder_months_before",
-            "reminderDay":"reminder_days_before",
-
-            # "lastPaymentDate":"last_payment_date",
-            # "providerContact":"contact_phone",
-            # "providerEmail":"contact_email",
-            # "providerName":"provider_name",
-            # "websiteLink":"website",
-            # "userId": "user"  # Ensure user ID is included
+            "notificationMethod": "notification_method",
+            "customMessage": "custom_message",
+            "billingCycle": "billing_cycle",
+            "daysBeforeEnd": "optional_days_before",
+            "firstReminderMonth": "reminder_months_before",
+            "reminderDay": "reminder_days_before",
         }
 
         for frontend_key, backend_key in field_mapping.items():
             if frontend_key in data:
                 value = data.pop(frontend_key)
-                # Convert empty string to None for integer fields
                 if backend_key in ["optional_days_before", "reminder_months_before", "reminder_days_before"] and value == "":
-                    data[backend_key] = None  # or use 0 if needed
+                    data[backend_key] = None
                 else:
                     data[backend_key] = value
 
         print("Modified Data:", data)
         print("\n***********************************************************************************************************************************")
 
-        # ✅ Prevent duplicate subscriptions for the same user, provider, and category with overlapping dates
+        required_fields = ["providerid", "subscription_category", "start_date", "billing_cycle", "cost", "payment_method"]
+        for field in required_fields:
+            if not data.get(field):
+                return Response({"error": f"{field.replace('_', ' ').title()} is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check for existing subscription
         existing_subscription = Subscription.objects.filter(
             user=request.user,
             provider_id=data.get("provider"),
             subscription_category=data.get("subscription_category"),
-            start_date__lte=data.get("end_date"),
-            end_date__gte=data.get("start_date"),
-            is_deleted=False  # Ignore soft-deleted records
+            is_deleted=False
         ).exists()
 
         if existing_subscription:
-            return Response({"error": "A similar active subscription already exists for this provider and category."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "A similar active subscription already exists."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-        # ✅ Set 'status' dynamically
+        # Set default values
         data["status"] = "Active"
-        data["reminder_type"] = "renewal"
         data["payment_status"] = "pending"
-        # data["reminder_time"] = "14:45:00"
-        data["reminder_status"] = "pending"
-        # ✅ Assign 'user' field (assuming user is the logged-in user)
         data["user"] = request.user.id
-        # data["created_by"] = request.user.id
         print("Final Data Before Saving:", data)
-        print("\n***********************************************************************************************************************************")
 
-        provider_id = data.get("providerid")  # Get provider ID from request
+        provider_id = data.get("providerid")
         print("🔍 Selected Provider ID:", provider_id)
 
         if not provider_id:
             return Response({"error": "Provider ID is required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Fetch the provider instance from DB
         try:
             provider = Provider.objects.get(id=provider_id)
         except Provider.DoesNotExist:
             return Response({"error": "Invalid Provider ID."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Assign provider to subscription data
         data["provider"] = provider.id
-
-        # Extract additional fields separately
         additional_fields = data.pop("additionalDetails", {})
-
-        # Extract and remove reminder-related fields before subscription creation
         reminder_fields = [
-            "reminder_type",  "reminder_days_before",
-            "reminder_months_before", "reminder_day_of_month",
+            "reminder_days_before", "reminder_months_before", "reminder_day_of_month",
             "notification_method", "recipients", "custom_message", "optional_days_before"
         ]
         reminder_data = {key: data.pop(key) for key in reminder_fields if key in data}
-
-        # ✅ Apply default reminder settings if none provided
-        if not any(reminder_data.values()):
-            # subscription_cycle = data.get("subscription_cycle", "monthly")
-
-            if subscription.billing_cycle in ["weekly", "monthly"]:
-                reminder_data["reminder_days_before"] = 7  # Default to 7 days before due date
-            else:
-                reminder_data["reminder_months_before"] = 1  # Default to 1 month before
-                reminder_data["reminder_day_of_month"] = 1  # Default to 1st day of the month
-
-            reminder_data["notification_method"] = "email"  # Default notification method
-            reminder_data["reminder_type"] = "renewal"  # Default reminder type
-            reminder_data["reminder_status"] = "pending"
-            reminder_data["recipients"] = request.user.email  # Default to user's email
-            reminder_data["custom_message"] = "Your subscription is due soon. Please renew it in time."  # Default message
+        print(reminder_data)
 
         # Validate and create subscription
         serializer = self.get_serializer(data=data)
-        if serializer.is_valid():
-            subscription = serializer.save()
-
-            # Handle category-specific data
-            category = subscription.subscription_category
-            if category == "Software":
-                SoftwareSubscriptions.objects.create(subscription=subscription, **additional_fields)
-            elif category == "Billing":
-                utility_instance = Utilities(subscription=subscription, **additional_fields)
-                try:
-                    utility_instance.clean()
-                    utility_instance.save()
-                except ValidationError as e:
-                    return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-            elif category == "Domain":
-                Domain.objects.create(subscription=subscription, **additional_fields)
-            elif category == "Server":
-                Servers.objects.create(subscription=subscription, **additional_fields)
-
-            # Create the reminder entry if reminder data exists
-            if reminder_data:
-                # subscription_cycle = reminder_data.get("subscription_cycle")
-
-                # Validate reminder fields based on subscription cycle
-                if subscription.billing_cycle in ["weekly", "monthly"]:
-                    reminder_days_before = reminder_data.get("reminder_days_before")
-                    print("Reminder Days Before:", reminder_days_before)
-
-                    if reminder_days_before is None or reminder_days_before == "":
-                        return Response(
-                            {"error": "reminder_days_before is required for weekly/monthly cycles."},
-                            status=status.HTTP_400_BAD_REQUEST
-                        )
-                    # Remove unnecessary fields
-                    reminder_data.pop("reminder_months_before", None)
-                    reminder_data.pop("reminder_day_of_month", None)
-                else: # Long-term cycles (e.g., yearly, custom)
-                    reminder_months_before = reminder_data.get("reminder_months_before")
-                    reminder_day_of_month = reminder_data.get("reminder_day_of_month")
-                    
-                    if subscription.billing_cycle not in ["weekly", "monthly"] and (not reminder_months_before or not reminder_day_of_month):
-
-                        return Response(
-                            {"error": "reminder_months_before and reminder_day_of_month are required for long-term cycles."},
-                            status=status.HTTP_400_BAD_REQUEST
-                        )
-
-            if reminder_data:
-                # Create Reminder
-                reminder = Reminder.objects.create(
-                    # subscription_cycle=subscription_cycle,
-                    reminder_days_before=reminder_data.get("reminder_days_before"),
-                    reminder_months_before=reminder_data.get("reminder_months_before"),
-                    reminder_day_of_month=reminder_data.get("reminder_day_of_month"),
-                    optional_days_before=reminder_data.get("optional_days_before"),
-                    notification_method=reminder_data.get("notification_method"),
-                    recipients=reminder_data.get("recipients"),
-                    custom_message=reminder_data.get("custom_message"),
-                    reminder_type=reminder_data.get("reminder_type"),
-                )
-
-                # Link the reminder with the subscription
-                ReminderSubscription.objects.create(reminder=reminder, subscription=subscription)
-
-                # Calculate and save the reminder_date
-                reminder_dates = reminder.calculate_all_reminder_dates(subscription)
-                print("Reminder Dates:", reminder_dates)
-
-                if reminder_dates:
-                    print("First Reminder Date:", reminder_dates[0])
-                else:
-                    print("❌ No Reminder Dates Generated!")
-                    # return Response({"error": "Reminder dates could not be generated."}, status=status.HTTP_400_BAD_REQUEST)
-
-            if reminder_dates:
-                reminder.reminder_date = reminder_dates[0]  # Assign the first reminder date
-                reminder.save()
-                print("Reminder Date Saved:", reminder.reminder_date)
-            
-            return Response({'code': status.HTTP_201_CREATED, 'data': serializer.data}, status=status.HTTP_201_CREATED)
-        
         if not serializer.is_valid():
-            print("Serializer Errors:", serializer.errors)  # Print detailed errors
+            print("Serializer Errors:", serializer.errors)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+        try:
+            with transaction.atomic():
+                subscription = serializer.save()
+                print("Subscription created:", subscription)
+
+                # Handle category-specific data
+                category = subscription.subscription_category
+                if category == "Software":
+                    # Check for existing software subscription
+                    if SoftwareSubscriptions.objects.filter(subscription=subscription).exists():
+                        raise ValidationError("A software subscription with this ID already exists.")
+                    SoftwareSubscriptions.objects.create(subscription=subscription, **additional_fields)
+                elif category == "Billing":
+                    utility_instance = Utilities(subscription=subscription, **additional_fields)
+                    utility_instance.clean()
+                    utility_instance.save()
+                elif category == "Domain":
+                    Domain.objects.create(subscription=subscription, **additional_fields)
+                elif category == "Server":
+                    Servers.objects.create(subscription=subscription, **additional_fields)
+
+                # Apply default reminder settings if none provided
+                if not any(reminder_data.values()):
+                    if subscription.billing_cycle in ["weekly", "monthly"]:
+                        reminder_data["reminder_days_before"] = 7
+                    else:
+                        reminder_data["reminder_months_before"] = 1
+                        reminder_data["reminder_day_of_month"] = 1
+
+                    reminder_data.update({
+                        "notification_method": "email",
+                        "reminder_type": "renewal",
+                        "recipients": request.user.email,
+                        "custom_message": "Your subscription is due soon. Please renew it in time."
+                    })
+
+                # Create Reminder if data exists
+                if any(reminder_data.values()):
+                    reminder = Reminder.objects.create(
+                        reminder_days_before=reminder_data.get("reminder_days_before"),
+                        reminder_months_before=reminder_data.get("reminder_months_before"),
+                        reminder_day_of_month=reminder_data.get("reminder_day_of_month"),
+                        optional_days_before=reminder_data.get("optional_days_before"),
+                        notification_method=reminder_data.get("notification_method"),
+                        recipients=reminder_data.get("recipients"),
+                        custom_message=reminder_data.get("custom_message"),
+                        reminder_type="renewal",
+                    )
+
+                    ReminderSubscription.objects.create(reminder=reminder, subscription=subscription)
+
+                    reminder_dates = reminder.calculate_all_reminder_dates(subscription)
+                    print("Reminder Dates:", reminder_dates)
+
+                    if reminder_dates:
+                        reminder.reminder_date = reminder_dates[0]
+                        reminder.save()
+                        print("Reminder Date Saved:", reminder.reminder_date)
+
+                return Response({
+                    'code': status.HTTP_201_CREATED,
+                    'data': serializer.data
+                }, status=status.HTTP_201_CREATED)
+
+        except ValidationError as e:
+            print(f"Validation Error: {str(e)}")
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            print(f"Error creating subscription: {str(e)}")
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # from django.utils import timezone
 # from django_filters.rest_framework import DjangoFilterBackend
@@ -862,30 +1143,67 @@ from SubSync.serializers import SubscriptionSerializer
 #             return Response({"message": "Subscription updated successfully", "data": serializer.data}, status=status.HTTP_200_OK)
         
 #         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+# class SubscriptionDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
+#     """
+#     API endpoint to retrieve, update, or delete a subscription.
+#     """
+#     queryset = Subscription.objects.filter(is_deleted=False).select_related("provider").prefetch_related(
+#         "software_detail", "billing", "domain", "server"
+#     ).all()
+#     serializer_class = SubscriptionDetailSerializer
+#     permission_classes = [permissions.IsAuthenticated]
+
+#     def update(self, request, *args, **kwargs):
+#         # Print the incoming update data
+#         print("Update data received from frontend:", request.data)
+        
+#         # Call the parent class's update method to handle the update as usual
+#         return super().update(request, *args, **kwargs)
+    
+#     def perform_destroy(self, instance):
+#         """
+#         Override the delete method to perform a soft delete instead of a hard delete.
+#         """
+#         print(f"Soft deleting subscription with ID: {instance.id}")
+#         instance.soft_delete(deleted_by=self.request.user) 
+
 class SubscriptionDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
-    """
-    API endpoint to retrieve, update, or delete a subscription.
-    """
-    queryset = Subscription.objects.filter(is_deleted=False).select_related("provider").prefetch_related(
+    queryset = Subscription.objects.filter(is_deleted=False).select_related(
+        "provider"
+    ).prefetch_related(
         "software_detail", "billing", "domain", "server"
-    ).all()
-    serializer_class = SubscriptionDetailSerializer
+    )
+    # print(queryset)
+    
+    # Use different serializers for different actions
+    def get_serializer_class(self):
+        if self.request.method in ['PUT', 'PATCH']:
+            return SubscriptionUpdateSerializer
+        return SubscriptionDetailSerializer
+    
     permission_classes = [permissions.IsAuthenticated]
 
-    def update(self, request, *args, **kwargs):
-        # Print the incoming update data
-        print("Update data received from frontend:", request.data)
-        
-        # Call the parent class's update method to handle the update as usual
-        return super().update(request, *args, **kwargs)
-    
-    def perform_destroy(self, instance):
-        """
-        Override the delete method to perform a soft delete instead of a hard delete.
-        """
-        print(f"Soft deleting subscription with ID: {instance.id}")
-        instance.soft_delete(deleted_by=self.request.user) 
+    def perform_update(self, serializer):
+        instance=serializer.save(updated_by=self.request.user)
+        logger.info(f"Subscription {instance.id} updated successfully by {self.request.user}")
 
+    def perform_destroy(self, instance):
+        print(f"Soft deleting subscription with ID: {instance.id}")
+        instance.soft_delete(deleted_by=self.request.user)
+
+    def patch(self, request, *args, **kwargs):
+        logger.debug(f"Received PATCH request with data: {request.data}")
+        try:
+            response = self.partial_update(request, *args, **kwargs)
+            logger.info(f"Subscription {kwargs.get('pk')} patched successfully.")
+            return Response({"success": True, "message": "Subscription updated successfully."}, status=status.HTTP_200_OK)
+        except ValidationError as e:
+            logger.error(f"Validation error while updating subscription: {str(e)}")
+            return Response({"error": str(e)},status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.exception("Unexpected error while updating subscription.")
+            return Response({"error": str(e)},status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
 # from datetime import datetime, timedelta
 # from collections import defaultdict
 # from django.db.models import Sum
@@ -1314,19 +1632,21 @@ class AddHardwareAPIView(APIView):
     permission_classes=[IsAuthenticated]
     
     def post(self, request, *args, **kwargs):
+        print("\n*************************************************************************************************************************************")
         logger.info("Received request data: %s", request.data)
         # serializer = HardwareSerializer(data=request.data)
         # serializer = HardwareSerializer(data=request.data, context={'request': request})
         # Convert frontend fields to match backend model
         converted_data = self.convert_frontend_to_backend(request.data)
-        logger.info("Converted data: %s", converted_data)
+        print("\n*************************************************************************************************************************************")
+        # logger.info("Converted data: %s", converted_data)
 
         converted_data["user"] = request.user.id
         converted_data["status"] = "Active"
         logger.info("Converted data: %s", converted_data)
 
         if Hardware.objects.filter(serial_number=converted_data["serial_number"]).exists():
-            return Response({"message": "Duplicate serial number"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"message": "Duplicate serial number","status":status.HTTP_400_BAD_REQUEST}, status=status.HTTP_400_BAD_REQUEST)
         
         serializer = HardwareSerializer(data=converted_data, context={'request': request}) 
  
@@ -1347,51 +1667,60 @@ class AddHardwareAPIView(APIView):
                 "optionalDaysBefore": "optional_days_before",
             }
 
-            reminder_data = {}
+            maintenance_reminder_data = {}
             for frontend_key, backend_key in reminder_field_mapping.items():
                 if frontend_key in request.data:
-                    reminder_data[backend_key] = request.data[frontend_key]
+                    maintenance_reminder_data[backend_key] = request.data[frontend_key]
 
             # ✅ Apply default reminder settings if none provided (optional)
-            if not any(reminder_data.values()):
-                # For example, default to 30 days before hardware maintenance is due.
-                reminder_data["reminder_type"] = "maintenance"
-                reminder_data["reminder_days_before"] = 3  
-                reminder_data["notification_method"] = "email"
-                reminder_data["recipients"] = request.user.email
-                reminder_data["custom_message"] = "Your hardware maintenance is scheduled soon. Please check your service details."
-                reminder_data["reminder_status"] = "pending"
-            else:
-                # Ensure that required fields are provided if any reminder data is present.
-                if not reminder_data.get("reminder_days_before"):
-                    return Response(
-                        {"error": "reminder_days_before is required for hardware reminders."},
-                        status=status.HTTP_400_BAD_REQUEST
+            if not any(maintenance_reminder_data.values()):
+                 maintenance_reminder_data.update({
+                    "reminder_type": "maintenance",
+                    "reminder_days_before": 3,
+                    "notification_method": "email",
+                    "recipients": request.user.email,
+                    "custom_message": f"Your hardware {hardware.hardware_type} (SN: {hardware.serial_number}) maintenance is scheduled soon. Please check your service details.",
+                    "reminder_status": "pending"
+                })
+            # Create warranty reminder
+            warranty_reminder_data = {
+                "reminder_type": "warranty",
+                "reminder_days_before": 3,  # 30 days before warranty expires
+                "notification_method": "email",
+                "recipients": request.user.email,
+                "custom_message": f"Warranty for your {hardware.hardware_type} (SN: {hardware.serial_number}) is expiring soon.",
+                "reminder_status": "pending"
+            }
+
+             # Create both reminders
+            for reminder_data, reminder_name in [
+                (maintenance_reminder_data, "Maintenance"),
+                (warranty_reminder_data, "Warranty")
+            ]:
+                try:
+                    reminder = Reminder.objects.create(
+                        reminder_type=reminder_data.get("reminder_type"),
+                        reminder_days_before=reminder_data.get("reminder_days_before"),
+                        reminder_months_before=reminder_data.get("reminder_months_before"),
+                        reminder_day_of_month=reminder_data.get("reminder_day_of_month"),
+                        optional_days_before=reminder_data.get("optional_days_before"),
+                        notification_method=reminder_data.get("notification_method"),
+                        recipients=reminder_data.get("recipients"),
+                        custom_message=reminder_data.get("custom_message"),
+                        reminder_status=reminder_data.get("reminder_status", "pending"),
                     )
-
-            # If we have reminder data, create a reminder and link it to the hardware.
-            if reminder_data:
-                reminder = Reminder.objects.create(
-                    reminder_type=reminder_data.get("reminder_type"),
-                    reminder_days_before=reminder_data.get("reminder_days_before"),
-                    reminder_months_before=reminder_data.get("reminder_months_before"),
-                    reminder_day_of_month=reminder_data.get("reminder_day_of_month"),
-                    optional_days_before=reminder_data.get("optional_days_before"),
-                    notification_method=reminder_data.get("notification_method"),
-                    recipients=reminder_data.get("recipients"),
-                    custom_message=reminder_data.get("custom_message"),
-                    reminder_status=reminder_data.get("reminder_status", "pending"),
-                )
-
-                # Here we assume there is a linking model between Reminder and Hardware such as ReminderHardware. If your hardware model has a direct FK or OneToOne to Reminder, adjust accordingly.
-                ReminderHardware.objects.create(reminder=reminder, hardware=hardware)
-                logger.info("Reminder created and linked to hardware: %s", reminder)
+                    ReminderHardware.objects.create(reminder=reminder, hardware=hardware)
+                    logger.info(f"{reminder_name} reminder created and linked to hardware: {reminder}")
+                
+                except Exception as e:
+                    logger.error(f"Failed to create {reminder_name.lower()} reminder: {str(e)}")
+                    continue
             
-            return Response({
-                "message": "Hardware successfully added.",
-                "data": serializer.data,
-                "status": status.HTTP_201_CREATED
-            }, status=status.HTTP_201_CREATED)
+            # return Response({
+            #     "message": "Hardware successfully added.",
+            #     "data": serializer.data,
+            #     "status": status.HTTP_201_CREATED
+            # }, status=status.HTTP_201_CREATED)
         
         if not serializer.is_valid():
             logger.info("HardwareSerializer validation errors: %s", serializer.errors)
@@ -1399,6 +1728,11 @@ class AddHardwareAPIView(APIView):
             "message": "Failed to add hardware. Please check the input data.",
             "errors": serializer.errors,
             }, status=status.HTTP_400_BAD_REQUEST)
+        if not serializer.is_valid():
+            logger.info("Validation errors: %s", serializer.errors)
+            error_messages = " ".join([f"{key}: {', '.join(value)}" for key, value in serializer.errors.items()])
+            return Response({
+                "message": f"Failed to add hardware. {error_messages}"}, status=status.HTTP_400_BAD_REQUEST)
     
     def convert_frontend_to_backend(self, data):
         try:
@@ -1418,6 +1752,10 @@ class AddHardwareAPIView(APIView):
                 "serial_number": data.get("serialNumber"),
                 "assigned_department": data.get("assignedTo"),
                 "notes": data.get("notes"),
+                "vendor_contact":data.get("vendor_contact"),
+                "vendor_email":data.get("vendor_email"),
+                "vendor_name":data.get("vendor_name"),
+                
                 # "status": "active",  # Set default status
                 "purchase": {
                     "purchase_date": parse_date(data.get("purchaseDate")),
@@ -1467,32 +1805,43 @@ class AddHardwareAPIView(APIView):
                     "ram": data.get("RAM"),
                     "storage": data.get("Storage"),
                 }
+            if data.get("deviceType") == "On-Premise Server":
+                converted["computer"] = {
+                    "computer_type": "Server",
+                    "cpu": data.get("CPU"),
+                    "ram": data.get("RAM"),
+                    "storage": data.get("Storage"),
+
+                    "operating_system": data.get("Operating_System"),
+                    "hardware_server_name": data.get("Server_Name"),
+                }
 
             if data.get("deviceType") == "Network Device":
-                converted["Network Device"] = {
+                converted["network_device"] = {
                     "throughput": data.get("Throughput"),
                     "ip_address": data.get("IP_Address"),
+                    "name_specification": data.get("Name_Specification"),
                 }
             if data.get("deviceType") == "Air Conditioner":
-                converted["Air Conditioner"] = {
+                converted["air_conditioner"] = {
                     "btu_rating": data.get("BTU_Rating"),
                     "energy_rating": data.get("EnergyP_Rating"),
                 }
-            if data.get("deviceType") == "On-Premise Server":
-                converted["On-Premise Server"] = {
-                    "cpu": data.get("CPU"),
-                    "ram": data.get("RAM"),
-                    "storage_configuration": data.get("Storage_Configuration"),
-                    "operating_system": data.get("Operating_System"),
-                }
+            # if data.get("deviceType") == "On-Premise Server":
+            #     converted["on_premise_server"] = {
+            #         "cpu": data.get("CPU"),
+            #         "ram": data.get("RAM"),
+            #         "storage_configuration": data.get("Storage_Configuration"),
+            #         "operating_system": data.get("Operating_System"),
+            #     }
             if data.get("deviceType") == "Printer":
-                converted["Printer"] = {
+                converted["printer"] = {
                     "print_technology": data.get("Print_Technology"),
                     "print_speed": data.get("Print_Speed"),
                     "connectivity": data.get("Connectivity"),
                 }
             if data.get("deviceType") == "Scanner":
-                converted["Scanner"] = {
+                converted["scanner"] = {
                     "scan_resolution": data.get("Scan_Resolution"),
                     "scan_type": data.get("Scan_Type"),
                     "connectivity": data.get("Connectivity"),
@@ -1772,15 +2121,27 @@ class ResourceCreateView(generics.CreateAPIView):
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save(user=request.user)
+        try:
+            if serializer.is_valid():
+                serializer.save(user=request.user)
+                return Response(
+                    {"message": "Resource added successfully!", "resource": serializer.data,"status":status.HTTP_201_CREATED},
+                    status=status.HTTP_201_CREATED
+                )
+        except ValidationError as e:
+            # return Response({"message": e.detail,"status":status.HTTP_400_BAD_REQUEST}, status=status.HTTP_400_BAD_REQUEST)
+            error_messages = e.detail  # Extract error details
+            print("error message:",error_messages)
+            error_text = " ".join([f"{key}: {', '.join(val)}" for key, val in error_messages.items()])  # Convert dict to text
+            print("error text:",error_text)
+
             return Response(
-                {"message": "Resource added successfully!", "resource": serializer.data,"status":status.HTTP_201_CREATED},
-                status=status.HTTP_201_CREATED
+                {"message": error_text, "status": status.HTTP_400_BAD_REQUEST}, 
+                status=status.HTTP_400_BAD_REQUEST
             )
         
         print("Serializer Errors:", serializer.errors)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"message":serializer.errors,"status":status.HTTP_400_BAD_REQUEST}, status=status.HTTP_400_BAD_REQUEST)
 
 from datetime import timedelta
 from django.utils.timezone import now
@@ -1805,12 +2166,13 @@ class DashboardOverviewAll(APIView):
 
         # Active Counts
         # total_active_subscriptions = Subscription.objects.filter(status="Active").count()
-        total_active_customers = Customer.objects.filter(status="Active").count()
+        total_active_customers = Customer.objects.filter(status="Active",is_deleted=False).count()
         total_active_hardware = Hardware.objects.filter(status="Active",is_deleted=False).count()
         total_hardware=Hardware.objects.filter(is_deleted=False).count()
 
         # active_count = Subscription.objects.filter(end_date__gte=now()).count()
-        active_count = Subscription.objects.filter(status="Active").count()
+        active_count = Subscription.objects.filter(status="Active",is_deleted=False).count()
+        # active_count = Subscription.objects.all.count()
         print(f"active count {active_count}")
         # expired_count = Subscription.objects.filter(end_date__lt=now()).count()
         expired_count = Subscription.objects.filter(status="Expired").count()
@@ -1981,7 +2343,7 @@ class ServerListByHostingTypeAPIView(APIView):
 
         # Fetch server names based on hosting_type
         if hosting_type.lower() == "inhouse":
-            servers = HardwareServers.objects.values_list('cpu', flat=True)
+            servers = Computer.objects.values_list('hardware_server_name', flat=True)
             print(servers)
 
         elif hosting_type.lower() == "external":
@@ -2027,6 +2389,7 @@ class CustomerAPIView(APIView):
             customer = serializer.save()
             print(f"✅ Customer saved successfully: {customer}")
             return Response({"message": "Customer added successfully", "customer": serializer.data ,"status":status.HTTP_201_CREATED}, status=status.HTTP_201_CREATED)
+        
         print(f"❌ Validation failed: {serializer.errors}") 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
@@ -2034,6 +2397,10 @@ class ServerUsageView(APIView):
     def get(self, request):
         servers = Servers.objects.all()
         serializer = ServerUsageSerializer(servers, many=True)
+
+        for server in serializer.data:
+            print(f"Server: {server['server_name']}, Used: {server['used']}, Total: {server['total']}, Percentage: {server['percentage']}")
+
         return Response(serializer.data)
     
 # ✅ API to List All Customers
@@ -2048,17 +2415,117 @@ class CustomerDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Customer.objects.all()
     serializer_class = CustomerSerializer
 
+    def retrieve(self, request, *args, **kwargs):
+        """Retrieve customer details."""
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        return Response(
+            {"message": "Customer retrieved successfully!", "customer": serializer.data},
+            status=status.HTTP_200_OK
+        )
+
+    def update(self, request, *args, **kwargs):
+        """Update customer details."""
+        partial = kwargs.pop('partial', False)  # Handle both PATCH & PUT
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        
+        if serializer.is_valid():
+            serializer.save()
+            return Response(
+                {"message": "Customer updated successfully!", "customer": serializer.data},
+                status=status.HTTP_200_OK
+            )
+        
+        return Response(
+            {"message": "Validation failed!", "errors": serializer.errors},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    def destroy(self, request, *args, **kwargs):
+        """Delete customer (soft delete if applicable)."""
+        instance = self.get_object()
+        instance.soft_delete(deleted_by=request.user)
+        return Response(
+            {"message": "Customer deleted successfully!"},
+            status=status.HTTP_204_NO_CONTENT
+        )
+
 # ✅ List All Resources or Create a New Resource
 class ResourceListCreateView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated]
     queryset = Resource.objects.all()
     serializer_class = ResourceSerializer
 
+    # def list(self, request, *args, **kwargs):
+    #     queryset = self.get_queryset()
+    #     serializer = self.get_serializer(queryset, many=True)
+
+    #     return Response(
+    #         {
+    #             "message": "Resource list retrieved successfully!",
+    #             "count": queryset.count(),
+    #             "resources": serializer.data,
+    #             "status": status.HTTP_200_OK
+    #         },
+    #         status=status.HTTP_200_OK
+    #     )
+
 # ✅ Retrieve, Update, or Delete a Specific Resource
-class ResourceDetailView(generics.RetrieveUpdateDestroyAPIView):
+class ResourceDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAuthenticated]
     queryset = Resource.objects.all()
     serializer_class = ResourceSerializer
+
+    def retrieve(self, request, *args, **kwargs):
+        """Custom response for retrieving a single resource."""
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        return Response(
+            {
+                "message": "Resource retrieved successfully!",
+                "resource": serializer.data,
+                "status": status.HTTP_200_OK
+            },
+            status=status.HTTP_200_OK
+        )
+
+    def update(self, request, *args, **kwargs):
+        """Custom response for updating a resource."""
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+
+        if serializer.is_valid():
+            serializer.save()
+            return Response(
+                {
+                    "message": "Resource updated successfully!",
+                    "resource": serializer.data,
+                    "status": status.HTTP_200_OK
+                },
+                status=status.HTTP_200_OK
+            )
+        return Response(
+            {
+                "message": "Resource update failed!",
+                "errors": serializer.errors,
+                "status": status.HTTP_400_BAD_REQUEST
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    def destroy(self, request, *args, **kwargs):
+        """Custom response for deleting a resource."""
+        instance = self.get_object()
+        instance.soft_delete(deleted_by=request.user)
+        return Response(
+            {
+                "message": "Resource deleted successfully!",
+                "status": status.HTTP_204_NO_CONTENT
+            },
+            status=status.HTTP_204_NO_CONTENT
+        )
 
 from rest_framework_simplejwt.views import TokenRefreshView
 from rest_framework.response import Response
@@ -2181,14 +2648,16 @@ from .serializers import ServerUsageSerializer
 
 class ServerReportAPIView(APIView):
     def get(self, request):
-        servers = Servers.objects.all()
+        # servers = Servers.objects.all()
+        servers = Servers.objects.all().prefetch_related('server_resources')
         data = []
 
         for server in servers:
             usage_serializer = ServerUsageSerializer(server)  # Get computed values
             used_capacity = usage_serializer.data["used"]
             total_capacity = usage_serializer.data["total"]
-            remaining_capacity = total_capacity - used_capacity
+            # remaining_capacity = total_capacity - used_capacity
+            remaining_capacity = max(total_capacity - used_capacity, 0)
             usage_percentage = usage_serializer.data["percentage"]
 
             server_data = {
@@ -2199,7 +2668,9 @@ class ServerReportAPIView(APIView):
                 "used_capacity": f"{used_capacity}GB",
                 "remaining_capacity": f"{remaining_capacity}GB",
                 "usage_percentage": f"{usage_percentage}%",
-                "usage_percentage_value": usage_percentage,
+                # "usage_percentage": f"{usage_percentage:.2f}%",
+                # "usage_percentage_value": usage_percentage,
+                # "usage_percentage_value": float(usage_percentage),
                 "resources": [
                     {
                         "resource_name": resource.resource_name,
@@ -2208,10 +2679,14 @@ class ServerReportAPIView(APIView):
                         # "used_storage": resource.used_storage,
                         # "remaining_storage": resource.remaining_storage,
                         "billing_cycle": resource.billing_cycle,
-                        "resource_cost": resource.resource_cost,
-                        "next_payment_date": resource.next_payment_date,
-                        "provisioned_date": resource.provisioned_date,
-                        "last_updated_date": resource.last_updated_date,
+                        # "resource_cost": resource.resource_cost,
+                        "resource_cost": float(resource.resource_cost) if resource.resource_cost else 0,
+                        # "next_payment_date": resource.next_payment_date,
+                        "next_payment_date": resource.next_payment_date.strftime("%Y-%m-%d") if resource.next_payment_date else None,
+                        # "provisioned_date": resource.provisioned_date,
+                        "provisioned_date": resource.provisioned_date.strftime("%Y-%m-%d") if resource.provisioned_date else None,
+                        # "last_updated_date": resource.last_updated_date,
+                        "last_updated_date": resource.last_updated_date.strftime("%Y-%m-%d") if resource.last_updated_date else None,
                         "status": resource.status,
                         "hosting_type": resource.hosting_type,
                         # "hosting_location": resource.hosting_location
@@ -2237,7 +2712,7 @@ class SubscriptionSoftDeleteAPIView(APIView):
         try:
             subscription = Subscription.objects.get(id=subscription_id, is_deleted=False)
 
-            subscription.soft_delete()
+            subscription.soft_delete(deleted_by=request.user)
 
             return Response({"message": "Subscription deleted successfully.","status":status.HTTP_200_OK}, status=status.HTTP_200_OK)
         
@@ -2404,13 +2879,17 @@ class RecycleBinView(APIView):
 
         # Serialize the data
         subscription_data = SubscriptionDetailSerializer(subscriptions, many=True).data
+        print(subscription_data)
         hardware_data = HardwareSerializer(hardware, many=True).data
+        print(hardware_data)
         customer_data = CustomerSerializer(customers, many=True).data
+        print(customer_data)
 
         # Transform the data into the frontend format
         transformed_data = self.transform_to_frontend_format(
             subscription_data, hardware_data, customer_data
         )
+        print(transformed_data)
 
         return Response(transformed_data, status=status.HTTP_200_OK)
 
@@ -2424,7 +2903,7 @@ class RecycleBinView(APIView):
         # Transform subscriptions
         for subscription in subscription_data:
             deleted_at_str = subscription.get("deleted_at")
-            print(deleted_at_str)
+            # print(deleted_at_str)
             if deleted_at_str:
                 deleted_at = datetime.fromisoformat(deleted_at_str)
                 # Calculate expiration date (30 days after deletion)
@@ -2435,11 +2914,11 @@ class RecycleBinView(APIView):
                 remaining_days = None  
 
             transformed_data.append({
-                "id": f"sub-{subscription['id']}",
+                "id":subscription['id'],
                 "name": subscription.get("name", "Unnamed Subscription"),
                 "type": "subscription",
                 "deletedAt": deleted_at_str,
-                "deletedBy": subscription.get("deleted_by", "Unknown"),
+                "deletedBy": subscription.get("deleted_by_username", "Unknown"),
                 "expiresAt": remaining_days,
             })
 
@@ -2453,11 +2932,11 @@ class RecycleBinView(APIView):
             else:
                 remaining_days = None
             transformed_data.append({
-                "id": f"hw-{hardware['id']}",
-                "name": hardware.get("name", "Unnamed Hardware"),
+                "id": hardware['id'],
+                # "name": hardware.get("name", "Unnamed Hardware"),
                 "type": "hardware",
                 "deletedAt": deleted_at_str,
-                "deletedBy": hardware.get("deleted_by", "Unknown"),
+                "deletedBy": hardware.get("deleted_by_username", "Unknown"),
                 "expiresAt": remaining_days,
             })
 
@@ -2472,54 +2951,142 @@ class RecycleBinView(APIView):
                 remaining_days = None
 
             transformed_data.append({
-                "id": f"cust-{customer['id']}",
+                "id": customer['id'],
                 "name": customer.get("customer_name", "Unnamed Customer"),
                 "type": "customer",
                 "deletedAt": deleted_at_str,
-                "deletedBy": customer.get("deleted_by", "Unknown"),
+                "deletedBy": customer.get("deleted_by_username", "Unknown"),
                 "expiresAt": remaining_days,
             })
 
         return transformed_data
 
+    # def post(self, request):
+    #     """
+    #     Restore a soft-deleted item or permanently delete selected items.
+    #     """
+    #     action = request.data.get('action')  # 'restore' or 'delete_permanently'
+    #     item_type = request.data.get('type')  # 'subscription', 'hardware', or 'customer'
+    #     item_ids = request.data.get('ids', [])  # List of item IDs to restore or delete
+
+    #     if action not in ['restore', 'delete_permanently']:
+    #         return Response({'error': 'Invalid action'}, status=status.HTTP_400_BAD_REQUEST)
+
+    #     if item_type not in ['subscription', 'hardware', 'customer']:
+    #         return Response({'error': 'Invalid item type'}, status=status.HTTP_400_BAD_REQUEST)
+
+    #     if not item_ids:
+    #         return Response({'error': 'No items selected'}, status=status.HTTP_400_BAD_REQUEST)
+
+    #     # Fetch the items based on the type
+    #     if item_type == 'subscription':
+    #         items = Subscription.objects.filter(id__in=item_ids, is_deleted=True)
+    #     elif item_type == 'hardware':
+    #         items = Hardware.objects.filter(id__in=item_ids, is_deleted=True)
+    #     elif item_type == 'customer':
+    #         items = Customer.objects.filter(id__in=item_ids, is_deleted=True)
+
+    #     if not items.exists():
+    #         return Response({'error': 'No matching items found'}, status=status.HTTP_404_NOT_FOUND)
+
+    #     # Perform the action
+    #     if action == 'restore':
+    #         for item in items:
+    #             item.restore()  # Call the restore method
+    #         message = f'{len(items)} {item_type}(s) restored successfully'
+    #     elif action == 'delete_permanently':
+    #         items.delete()  # Permanently delete the items
+    #         message = f'{len(items)} {item_type}(s) permanently deleted'
+
+    #     return Response({'message': message}, status=status.HTTP_200_OK)
+
     def post(self, request):
         """
-        Restore a soft-deleted item or permanently delete selected items.
+        Restore soft-deleted items or permanently delete selected items.
+        Handles multiple operations in a single request.
         """
-        action = request.data.get('action')  # 'restore' or 'delete_permanently'
-        item_type = request.data.get('type')  # 'subscription', 'hardware', or 'customer'
-        item_ids = request.data.get('ids', [])  # List of item IDs to restore or delete
+        if not isinstance(request.data, list):
+            return Response({'error': 'Expected an array of operations'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if action not in ['restore', 'delete_permanently']:
-            return Response({'error': 'Invalid action'}, status=status.HTTP_400_BAD_REQUEST)
+        results = []
+        
+        for operation in request.data:
+            action = operation.get('action')  # 'restore' or 'delete_permanently'
+            item_type = operation.get('type')  # 'subscription', 'hardware', or 'customer'
+            item_ids = operation.get('ids', [])  # List of item IDs to restore or delete
 
-        if item_type not in ['subscription', 'hardware', 'customer']:
-            return Response({'error': 'Invalid item type'}, status=status.HTTP_400_BAD_REQUEST)
+            if action not in ['restore', 'delete']:
+                results.append({
+                    'status': 'error',
+                    'message': 'Invalid action',
+                    'operation': operation
+                })
+                continue
+                # return Response({'error': 'Invalid action'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not item_ids:
-            return Response({'error': 'No items selected'}, status=status.HTTP_400_BAD_REQUEST)
+            if item_type not in ['subscription', 'hardware', 'customer']:
+                results.append({
+                    'status': 'error',
+                    'message': 'Invalid item type',
+                    'operation': operation
+                })
+                continue
+                # return Response({'error': 'Invalid item type'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Fetch the items based on the type
-        if item_type == 'subscription':
-            items = Subscription.objects.filter(id__in=item_ids, is_deleted=True)
-        elif item_type == 'hardware':
-            items = Hardware.objects.filter(id__in=item_ids, is_deleted=True)
-        elif item_type == 'customer':
-            items = Customer.objects.filter(id__in=item_ids, is_deleted=True)
+            if not item_ids:
+                results.append({
+                    'status': 'error',
+                    'message': 'No items selected',
+                    'operation': operation
+                })
+                continue
+                # return Response({'error': 'No items selected'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not items.exists():
-            return Response({'error': 'No matching items found'}, status=status.HTTP_404_NOT_FOUND)
+            # Fetch the items based on the type
+            if item_type == 'subscription':
+                items = Subscription.objects.filter(id__in=item_ids, is_deleted=True)
+            elif item_type == 'hardware':
+                items = Hardware.objects.filter(id__in=item_ids, is_deleted=True)
+            elif item_type == 'customer':
+                items = Customer.objects.filter(id__in=item_ids, is_deleted=True)
 
-        # Perform the action
-        if action == 'restore':
-            for item in items:
-                item.restore()  # Call the restore method
-            message = f'{len(items)} {item_type}(s) restored successfully'
-        elif action == 'delete_permanently':
-            items.delete()  # Permanently delete the items
-            message = f'{len(items)} {item_type}(s) permanently deleted'
+            if not items.exists():
+                results.append({
+                    'status': 'error',
+                    'message': 'No matching items found',
+                    'operation': operation
+                })
+                continue
+                # return Response({'error': 'No matching items found'}, status=status.HTTP_404_NOT_FOUND)
 
-        return Response({'message': message}, status=status.HTTP_200_OK)
+            # Perform the action
+            try:
+                if action == 'restore':
+                    for item in items:
+                        item.restore()  # Call the restore method
+                    message = f'{len(items)} {item_type}(s) restored successfully'
+                elif action == 'delete':
+                    items.delete()  # Permanently delete the items
+                    message = f'{len(items)} {item_type}(s) permanently deleted'
+
+                results.append({
+                    'status': 'success',
+                    'message': message,
+                    'operation': operation,
+                    'count': len(items)
+                })
+            except Exception as e:
+                results.append({
+                    'status': 'error',
+                    'message': str(e),
+                    'operation': operation
+                })
+
+        # Check if all operations were successful
+        all_success = all(result['status'] == 'success' for result in results)
+        status_code = status.HTTP_200_OK if all_success else status.HTTP_207_MULTI_STATUS
+
+        return Response({'results': results,'status':status_code}, status=status_code)
 
     # def delete(self, request):
     #     """
@@ -2558,3 +3125,55 @@ class IsSuperUserCheckAPIView(APIView):
             "username": user.username,
             "email": user.email,
         }, status=status.HTTP_200_OK)
+    
+class UserListView(generics.ListAPIView):
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated]
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+
+        # Support pagination if configured
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response({
+                "status": "success",
+                "message": "Users retrieved successfully",
+                "data": serializer.data
+            })
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response({
+            "status": "success",
+            "message": "Users retrieved successfully",
+            "data": serializer.data
+        }, status=status.HTTP_200_OK)
+    
+from rest_framework import generics, status
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from .serializers import UserStatusUpdateSerializer
+
+class UserStatusUpdateView(generics.UpdateAPIView):
+    queryset = User.objects.all()
+    serializer_class = UserStatusUpdateSerializer
+    permission_classes = [IsAuthenticated]  # Only authenticated users can update
+
+    def update(self, request, *args, **kwargs):
+        user_id = kwargs.get('pk')  # Get user ID from URL
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response({"status": "error", "message": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = self.get_serializer(user, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({
+                "status": status.HTTP_200_OK,
+                "message": "User status updated successfully",
+                "data": serializer.data
+            }, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

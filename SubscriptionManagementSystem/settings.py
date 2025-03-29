@@ -74,7 +74,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'django_filters',
     'rest_framework_simplejwt.token_blacklist',
-    # "django_celery_beat",
+    "django_celery_beat",
     'SubSync.apps.SubsyncConfig',
 
 ]
@@ -221,19 +221,20 @@ EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
-from celery.schedules import crontab
+# from celery.schedules import crontab
 
-CELERY_BEAT_SCHEDULE = {
-    # 'send-reminder-emails': {
-    #     'task': 'SubSync.tasks.send_reminder_email',
-    #     'schedule': crontab(minute='*/1'),  # Run every minute for testing
-    #     # 'args': (1,),  # Provide a valid reminder_id here
-    # },
-    'delete-old-recycle-bin-items': {
-        'task': 'SubSync.tasks.delete_old_recycle_bin_items',
-        'schedule': crontab(minute='*/1'),
-    },
-}
+# CELERY_BEAT_SCHEDULE = {
+#     # 'send-reminder-emails': {
+#     #     'task': 'SubSync.tasks.send_reminder_email',
+#     #     'schedule': crontab(minute='*/1'),  # Run every minute for testing
+#     #     # 'args': (1,),  # Provide a valid reminder_id here
+#     # },
+#     'delete-old-recycle-bin-items': {
+#         'task': 'SubSync.tasks.delete_old_recycle_bin_items',
+#         'schedule': crontab(minute='*/1'),
+            # 'schedule': crontab(hour=9, minute=0),  # Run daily at 9 AM
+#     },
+# }
 
 CELERY_BROKER_URL = 'redis://localhost:6379/0'
 CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'

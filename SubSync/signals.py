@@ -17,10 +17,13 @@ logger = logging.getLogger(__name__)
 #                 schedule_reminder_tasks(subscription, instance)
 #         except Exception as e:
 #             logger.error(f"Error handling reminder creation: {e}")
+
 @receiver(post_save, sender=Reminder)
 def handle_reminder_creation(sender, instance, created, **kwargs):
     """Schedule tasks when a new reminder is created."""
-    logger.info("handle_reminder_creation signal received")  # Debugging log
+    print("\n**********************************************signals.py***************************************************************************************")
+
+    logger.info("handle_reminder_creation signal received")
     if created:
         try:
             logger.info(f"New reminder created with ID: {instance.id}")

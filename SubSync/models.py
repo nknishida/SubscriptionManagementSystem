@@ -24,16 +24,19 @@ class User(AbstractUser):
         return self.email
 
 class Provider(models.Model):
+    # CATEGORY_CHOICES = ['Software', 'Billing', 'Server', 'Domain']
     provider_name = models.CharField(max_length=255, unique=True)
-    contact_email = models.EmailField(unique=True)
-    contact_phone = models.CharField(max_length=20, blank=True, null=True)
-    website = models.URLField(blank=True, null=True)
-
+    contact_email = models.EmailField()
+    contact_phone = models.CharField(max_length=20)
+    website = models.URLField()
+    # category = models.CharField(
+    #     max_length=50, choices=[(c, c) for c in CATEGORY_CHOICES]
+    # )
+    
     def __str__(self):
         return self.provider_name
 
 class Subscription(models.Model):
-
     CATEGORY_CHOICES = ['Software', 'Billing', 'Server', 'Domain']
     PAYMENT_STATUS_CHOICES = ['Paid',  'Unpaid','pending']
     STATUS_CHOICES = ['Active', 'Expired', 'Canceled']
@@ -50,11 +53,11 @@ class Subscription(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='subscriber')
     provider = models.ForeignKey(Provider, on_delete=models.CASCADE, related_name='subscription_provider')
     start_date = models.DateField()
-    end_date = models.DateField()
+    end_date = models.DateField(null=True, blank=True)
     billing_cycle = models.CharField(max_length=20)
     cost = models.DecimalField(max_digits=10, decimal_places=2)
     payment_method = models.CharField(max_length=50)
-    # last_payment_date = models.DateField(null=True, blank=True)
+    last_payment_date = models.DateField(null=True, blank=True)
     next_payment_date = models.DateField(null=True, blank=True)
     auto_renewal = models.BooleanField(default=False)  # Checkbox for auto-renewal
 
@@ -293,27 +296,34 @@ class Hardware(models.Model):
     status = models.CharField(max_length=50, choices=STATUS_CHOICES)
     notes = models.TextField(blank=True, null=True)
     
+    vendor_name=models.CharField(max_length=250)
+    vendor_contact=models.CharField(max_length=15)
+    vendor_email=models.EmailField()
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     is_deleted = models.BooleanField(default=False)
     deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by= models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='deleted_hardware')
     
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='hardware')
 
     def __str__(self):
         return f"{self.hardware_type} ({self.serial_number})"
     
-    def soft_delete(self):
+    def soft_delete(self,deleted_by=None):
         """Soft delete: Hide subscription without affecting status."""
         self.is_deleted = True
         self.deleted_at = now()
-        self.save(update_fields=['is_deleted', 'deleted_at'])
+        self.deleted_by=deleted_by
+        self.save(update_fields=['is_deleted', 'deleted_at','deleted_by'])
 
     def restore(self):
         """Restore subscription from soft delete."""
         self.is_deleted = False
         self.deleted_at = None
-        self.save(update_fields=['is_deleted', 'deleted_at'])
+        self.deleted_by=None
+        self.save(update_fields=['is_deleted', 'deleted_at','deleted_by'])
 
     class Meta:
         db_table = 'hardware'
@@ -327,6 +337,7 @@ class Warranty(models.Model):
     ]
 
     hardware = models.OneToOneField(Hardware, on_delete=models.CASCADE, related_name='warranty')
+    status = models.CharField(max_length=50, choices=[('Active', 'Active'), ('Expired', 'Expired')], default='Active')
     warranty_expiry_date = models.DateField()
     is_extended_warranty = models.BooleanField(default=False)
     extended_warranty_period = models.IntegerField(choices=EXTENDED_WARRANTY_PERIODS, null=True, blank=True)
@@ -358,13 +369,18 @@ class Computer(models.Model):
     COMPUTER_TYPES = [
         ('Laptop', 'Laptop'),
         ('Desktop', 'Desktop'),
+         ('Server', 'Server'),
     ]
 
     hardware = models.OneToOneField(Hardware, on_delete=models.CASCADE, related_name='computer')
+
     computer_type = models.CharField(max_length=50, choices=COMPUTER_TYPES)
     cpu = models.CharField(max_length=100)
     ram = models.CharField(max_length=100)
     storage = models.CharField(max_length=100)
+
+    hardware_server_name = models.CharField(max_length=100,blank=True, null=True)
+    operating_system = models.CharField(max_length=100,blank=True, null=True)
 
     def __str__(self):
         return f"{self.computer_type}: {self.hardware}"
@@ -388,6 +404,7 @@ class NetworkDevice(models.Model):
     hardware = models.OneToOneField(Hardware, on_delete=models.CASCADE, related_name='network_device')
     throughput = models.CharField(max_length=100)
     ip_address = models.CharField(max_length=100)
+    name_specification=models.CharField(max_length=100)
 
     def __str__(self):
         return f"Network Device: {self.hardware}"
@@ -400,17 +417,17 @@ class AirConditioner(models.Model):
     def __str__(self):
         return f"Air Conditioner: {self.hardware}"
     
-class HardwareServers(models.Model):
-    hardware = models.OneToOneField(Hardware, on_delete=models.CASCADE, related_name='server')
+# class HardwareServers(models.Model):
+#     hardware = models.OneToOneField(Hardware, on_delete=models.CASCADE, related_name='server')
     
-    hardware_server_name = models.CharField(max_length=100)
-    cpu = models.CharField(max_length=100)
-    ram = models.CharField(max_length=100)
-    storage_configuration = models.CharField(max_length=100)
-    operating_system = models.CharField(max_length=100)
+#     hardware_server_name = models.CharField(max_length=100)
+#     cpu = models.CharField(max_length=100)
+#     ram = models.CharField(max_length=100)
+#     storage_configuration = models.CharField(max_length=100)
+#     operating_system = models.CharField(max_length=100,blank=True, null=True)
 
-    def __str__(self):
-        return f"Server: {self.hardware}"
+#     def __str__(self):
+#         return f"Server: {self.hardware}"
     
 class Printer(models.Model):
     hardware = models.OneToOneField(Hardware, on_delete=models.CASCADE, related_name='printer')
@@ -580,6 +597,8 @@ class Reminder(models.Model):
 
     def calculate_all_reminder_dates(self, subscription):
         """Calculate all reminder dates for a subscription."""
+        print("\n**********************************************models.py***************************************************************************************")
+
         if not hasattr(subscription, "next_payment_date") or not subscription.next_payment_date:
             logger.error(f"Subscription {subscription.id if hasattr(subscription, 'id') else 'Unknown'} has no next_payment_date.")
             return []
@@ -684,6 +703,7 @@ class Customer(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     is_deleted = models.BooleanField(default=False)  # Soft delete flag
     deleted_at = models.DateTimeField(null=True, blank=True)  # Store delete time
+    deleted_by= models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='deleted_customer')
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='customers')
 
@@ -692,17 +712,19 @@ class Customer(models.Model):
     def __str__(self):
         return self.customer_name
     
-    def soft_delete(self):
+    def soft_delete(self,deleted_by=None):
         """Soft delete: Hide subscription without affecting status."""
         self.is_deleted = True
         self.deleted_at = now()
-        self.save(update_fields=['is_deleted', 'deleted_at'])
+        self.deleted_by=deleted_by
+        self.save(update_fields=['is_deleted', 'deleted_at','deleted_by'])
 
     def restore(self):
         """Restore subscription from soft delete."""
         self.is_deleted = False
         self.deleted_at = None
-        self.save(update_fields=['is_deleted', 'deleted_at'])
+        self.deleted_by=None
+        self.save(update_fields=['is_deleted', 'deleted_at','deleted_by'])
 
     class Meta:
         db_table = 'customer'
@@ -747,10 +769,27 @@ class Resource(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    is_deleted = models.BooleanField(default=False)  # Soft delete flag
+    deleted_at = models.DateTimeField(null=True, blank=True)  # Store delete time
+    deleted_by= models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='deleted_resources')
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='user_resources')
     server = models.ForeignKey(Servers, on_delete=models.CASCADE, related_name='server_resources')
     customer = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True, blank=True, related_name='resources')
+
+    def soft_delete(self,deleted_by=None):
+        """Soft delete: Hide subscription without affecting status."""
+        self.is_deleted = True
+        self.deleted_at = now()
+        self.deleted_by=deleted_by
+        self.save(update_fields=['is_deleted', 'deleted_at','deleted_by'])
+
+    def restore(self):
+        """Restore subscription from soft delete."""
+        self.is_deleted = False
+        self.deleted_at = None
+        self.deleted_by=None
+        self.save(update_fields=['is_deleted', 'deleted_at','deleted_by'])
 
     def calculate_next_payment_date(self):
         """Calculate the next payment date based on !provisioned_date //last_payment_date and billing_cycle."""

@@ -193,7 +193,7 @@ logger = logging.getLogger(__name__)
 @shared_task
 def send_reminder_notification(reminder_id,user_id=None):
     """Send reminder notifications based on the selected notification method."""
-    print("\n*************************************************************************************************************************************")
+    print("\n**********************************************tasks.py***************************************************************************************")
 
     logger.info(f"Starting send_reminder_notification task for reminder ID: {reminder_id}")
 
@@ -424,3 +424,47 @@ def delete_old_recycle_bin_items():
     Customer.objects.filter(is_deleted=True, deleted_at__lte=thirty_days_ago).delete()
 
     return "Old items permanently deleted"
+
+from django.utils.timezone import now
+
+@shared_task
+def update_subscriptions_status():
+    today = now().date()
+    
+    subscriptions = Subscription.objects.filter(is_deleted=False)
+
+    for subscription in subscriptions:
+        if subscription.next_payment_date and today > subscription.next_payment_date:
+            if subscription.auto_renewal:
+                subscription.status = "Active"
+            else:
+                subscription.status = "Expired"
+        
+        if subscription.next_payment_date and today > subscription.next_payment_date:
+            subscription.payment_status = "Unpaid"
+        elif subscription.payment_status == "pending":
+            subscription.payment_status = "pending"
+        else:
+            subscription.payment_status = "Paid"
+        
+        subscription.save(update_fields=['status', 'payment_status'])
+
+
+from django_celery_beat.models import PeriodicTask, IntervalSchedule
+import json
+
+def setup_periodic_tasks():
+    """Automatically create/update periodic task without using Django Admin."""
+    schedule, created = IntervalSchedule.objects.get_or_create(
+        every=1, period=IntervalSchedule.HOURS  # Runs every 1 hour
+    )
+
+    PeriodicTask.objects.update_or_create(
+        name="Update Subscription Status",
+        defaults={
+            "interval": schedule,
+            "task": "SubSync.tasks.update_subscriptions_status",
+            "args": json.dumps([]),
+            "kwargs": json.dumps({})
+        }
+    )
