@@ -646,7 +646,7 @@ from .models import ReminderSubscription
 #         print("Modified Data:", data)
 #         print("\n***********************************************************************************************************************************")
 
-#         # ✅ Prevent duplicate subscriptions for the same user, provider, and category with overlapping dates
+#         #  Prevent duplicate subscriptions for the same user, provider, and category with overlapping dates
 #         existing_subscription = Subscription.objects.filter(
 #             user=request.user,
 #             provider_id=data.get("provider"),
@@ -659,13 +659,13 @@ from .models import ReminderSubscription
 #         if existing_subscription:
 #             return Response({"error": "A similar active subscription already exists for this provider and category."}, status=status.HTTP_400_BAD_REQUEST)
 
-#         # ✅ Set 'status' dynamically
+#         # Set 'status' dynamically
 #         data["status"] = "Active"
 #         # data["reminder_type"] = "renewal"
 #         data["payment_status"] = "pending"
 #         # data["reminder_time"] = "14:45:00"
 #         # data["reminder_status"] = "pending"
-#         # ✅ Assign 'user' field (assuming user is the logged-in user)
+#         #  Assign 'user' field (assuming user is the logged-in user)
 #         data["user"] = request.user.id
 #         # data["created_by"] = request.user.id
 #         print("Final Data Before Saving:", data)
@@ -697,7 +697,7 @@ from .models import ReminderSubscription
 #         reminder_data = {key: data.pop(key) for key in reminder_fields if key in data}
 #         print(reminder_data)
 
-#         # # ✅ Apply default reminder settings if none provided
+#         # #  Apply default reminder settings if none provided
 #         # if not any(reminder_data.values()):
 
 #         #     if subscription.billing_cycle in ["weekly", "monthly"]:
@@ -720,7 +720,7 @@ from .models import ReminderSubscription
 #                 subscription = serializer.save()
 #                 print(subscription)
 
-#                 # ✅ Apply default reminder settings if none provided
+#                 # Apply default reminder settings if none provided
 #                 if not any(reminder_data.values()):
 
 #                     if subscription.billing_cycle in ["weekly", "monthly"]:
@@ -804,7 +804,7 @@ from .models import ReminderSubscription
 #                         if reminder_dates:
 #                             print("First Reminder Date:", reminder_dates[0])
 #                         else:
-#                             print("❌ No Reminder Dates Generated!")
+#                             print(" No Reminder Dates Generated!")
 #                             # return Response({"error": "Reminder dates could not be generated."}, status=status.HTTP_400_BAD_REQUEST)
 
 #                     if reminder_dates:
@@ -868,35 +868,41 @@ class SubscriptionCreateView(generics.CreateAPIView):
                 return Response({"error": f"{field.replace('_', ' ').title()} is required."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Check for existing subscription
-        existing_subscription = Subscription.objects.filter(
+        # existing_subscription = Subscription.objects.filter(user=request.user,provider_id=data.get("provider"),subscription_category=data.get("subscription_category"),is_deleted=False).exists()
+        existing_subscription =  Subscription.objects.filter(
             user=request.user,
             provider_id=data.get("provider"),
             subscription_category=data.get("subscription_category"),
+            billing_cycle=data.get("billing_cycle"),
+            cost=data.get("cost"),
+            payment_method=data.get("payment_method"),
+            start_date=data.get("start_date"),
             is_deleted=False
-        ).exists()
+        ).exists() or SoftwareSubscriptions.objects.filter(software_id=data.get("software_id")).exists() or Utilities.objects.filter(consumer_no=data.get("consumer_no")).exists() or Domain.objects.filter(domain_name=data.get("domain_name")).exists() or Servers.objects.filter(server_name=data.get("server_name")).exists()
+            # return Response({"error": "Duplicate subscription or related record exists."}, status=400)
 
         if existing_subscription:
             return Response(
-                {"error": "A similar active subscription already exists."},
+                {"message": "A similar active subscription already exists.","status":status.HTTP_400_BAD_REQUEST},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         # Set default values
         data["status"] = "Active"
-        data["payment_status"] = "pending"
+        data["payment_status"] = "Paid"
         data["user"] = request.user.id
         print("Final Data Before Saving:", data)
 
         provider_id = data.get("providerid")
-        print("🔍 Selected Provider ID:", provider_id)
+        print(" Selected Provider ID:", provider_id)
 
         if not provider_id:
-            return Response({"error": "Provider ID is required."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"message": "Provider ID is required."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             provider = Provider.objects.get(id=provider_id)
         except Provider.DoesNotExist:
-            return Response({"error": "Invalid Provider ID."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"message": "Invalid Provider ID."}, status=status.HTTP_400_BAD_REQUEST)
 
         data["provider"] = provider.id
         additional_fields = data.pop("additionalDetails", {})
@@ -937,7 +943,7 @@ class SubscriptionCreateView(generics.CreateAPIView):
                 # Apply default reminder settings if none provided
                 if not any(reminder_data.values()):
                     if subscription.billing_cycle in ["weekly", "monthly"]:
-                        reminder_data["reminder_days_before"] = 7
+                        reminder_data["reminder_days_before"] = 3
                     else:
                         reminder_data["reminder_months_before"] = 1
                         reminder_data["reminder_day_of_month"] = 1
@@ -979,10 +985,10 @@ class SubscriptionCreateView(generics.CreateAPIView):
 
         except ValidationError as e:
             print(f"Validation Error: {str(e)}")
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"message": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             print(f"Error creating subscription: {str(e)}")
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({"message": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # from django.utils import timezone
 # from django_filters.rest_framework import DjangoFilterBackend

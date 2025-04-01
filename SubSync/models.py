@@ -92,6 +92,9 @@ class Subscription(models.Model):
     def update_status(self):
         """Update the subscription status based on !end date//next_payement_date and auto-renewal."""
         today = now().date()
+
+        if self.end_date and today > self.end_date:
+            self.status = "Inactive"
         
         if self.is_deleted:
             self.status = "Canceled"
@@ -766,7 +769,7 @@ class Resource(models.Model):
 
     hosting_type = models.CharField(max_length=100, blank=True, null=True)
     # hosting_location_name= models.CharField(max_length=100, blank=True, null=True)
-    
+
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

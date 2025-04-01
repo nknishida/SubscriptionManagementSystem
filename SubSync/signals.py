@@ -1,5 +1,6 @@
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from SubSync.views import cancel_scheduled_tasks
 from .models import Reminder, Subscription
 from .utils import schedule_reminder_tasks
 import logging

@@ -433,6 +433,10 @@ def update_subscriptions_status():
     
     subscriptions = Subscription.objects.filter(is_deleted=False)
 
+    # Check if the end date has passed
+    if subscription.end_date and today > subscription.end_date:
+        subscription.status = "Inactive"
+
     for subscription in subscriptions:
         if subscription.next_payment_date and today > subscription.next_payment_date:
             if subscription.auto_renewal:
@@ -454,16 +458,33 @@ from django_celery_beat.models import PeriodicTask, IntervalSchedule
 import json
 
 def setup_periodic_tasks():
-    """Automatically create/update periodic task without using Django Admin."""
-    schedule, created = IntervalSchedule.objects.get_or_create(
-        every=1, period=IntervalSchedule.HOURS  # Runs every 1 hour
+    """Automatically create/update periodic tasks without using Django Admin."""
+    
+    # Schedule for updating subscription status (Runs every 1 hour)
+    schedule_1, created = IntervalSchedule.objects.get_or_create(
+        every=1, period=IntervalSchedule.HOURS
     )
 
     PeriodicTask.objects.update_or_create(
         name="Update Subscription Status",
         defaults={
-            "interval": schedule,
+            "interval": schedule_1,
             "task": "SubSync.tasks.update_subscriptions_status",
+            "args": json.dumps([]),
+            "kwargs": json.dumps({})
+        }
+    )
+
+    # Schedule for deleting old recycle bin items (Runs every 24 hours)
+    schedule_2, created = IntervalSchedule.objects.get_or_create(
+        every=24, period=IntervalSchedule.HOURS  # Runs once every day
+    )
+
+    PeriodicTask.objects.update_or_create(
+        name="Delete Old Recycle Bin Items",
+        defaults={
+            "interval": schedule_2,
+            "task": "SubSync.tasks.delete_old_recycle_bin_items",
             "args": json.dumps([]),
             "kwargs": json.dumps({})
         }
