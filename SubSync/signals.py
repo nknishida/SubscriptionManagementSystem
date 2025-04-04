@@ -60,12 +60,13 @@ def handle_reminder_creation(sender, instance, created, **kwargs):
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
-@receiver(post_save, sender=Subscription)
-def handle_subscription_update(sender, instance , created, **kwargs):
-    """Cancel scheduled tasks when subscription is updated to 'Paid'."""
-    if not created:  # Only proceed if this is an update, not a creation
-        if instance.payment_status == "Paid":
-            logger.info(f"Subscription ID {instance.id} is paid. Cancelling scheduled tasks.")
-            reminder = instance.reminder_set.first()  # Get the associated reminder
-            if reminder:
-                cancel_scheduled_tasks(reminder)
+# @receiver(post_save, sender=Subscription)
+# def handle_subscription_update(sender, instance , created, **kwargs):
+#     """Cancel scheduled tasks when subscription is updated to 'Paid'."""
+#     if not created:  # Only proceed if this is an update, not a creation
+#         if instance.payment_status == "Paid":
+#             logger.info(f"Subscription ID {instance.id} is paid. Cancelling scheduled tasks.")
+#             # reminder = instance.reminder_set.first()  # Get the associated reminder
+#             reminder = instance.reminder_subscriptions.first()
+#             if reminder:
+#                 cancel_scheduled_tasks(reminder)

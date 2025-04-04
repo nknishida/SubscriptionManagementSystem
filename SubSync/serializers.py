@@ -638,7 +638,7 @@ class HardwareSerializer(serializers.ModelSerializer):
             'Tablet': 'portable_device',
             'Network Device': 'network_device',
             'Air Conditioner': 'air_conditioner',
-            # 'On-Premise Server': 'server',
+            'On-Premise Server': 'computer',
             'Printer': 'printer',
             'Scanner': 'scanner',
         }
@@ -868,7 +868,7 @@ class CustomerBasicSerializer(serializers.ModelSerializer):
         fields= "__all__"
         # fields = ['id', 'customer_name', 'customer_phone', 'customer_email', 'status']
 
-class ResourceSerializer(serializers.ModelSerializer):
+class ResourceAddSerializer(serializers.ModelSerializer):
     customer = CustomerBasicSerializer(read_only=True)
     
     class Meta:
@@ -944,7 +944,95 @@ class ResourceSerializer(serializers.ModelSerializer):
 
             return super().to_internal_value(converted_data)
 
-        
+    def _convert_to_gb(self, capacity):
+        """ Helper function to convert capacity to GB if necessary. """
+        if isinstance(capacity, str):
+            if "TB" in capacity:
+                return int(capacity.replace("TB", "").strip()) * 1000  # Convert TB to GB
+            elif "GB" in capacity:
+                return int(capacity.replace("GB", "").strip())  # Already in GB
+        return int(capacity)
+
+    def _get_used_capacity(self, server):
+        """ Helper function to calculate total used capacity on a server. """
+        return sum(self._convert_to_gb(resource.storage_capacity) for resource in server.server_resources.all())
+    
+class ResourceViewSerializer(serializers.ModelSerializer):
+    customer = CustomerBasicSerializer(read_only=True)
+    server = ServerSerializer(read_only=True)
+    
+    class Meta:
+        model = Resource
+        fields = '__all__'
+        extra_kwargs = {
+            'server': {'required': False},
+            'user': {'required': False}
+        }
+
+    def validate(self, data):
+        """
+        Custom validation to set user and check server capacity.
+        """
+        request = self.context.get('request')
+
+        # Set the user from request
+        if request and request.user:
+            data["user"] = request.user
+            
+        data["status"] = "Active"
+
+        # Convert hosting_location_name to server ID
+        hosting_location_name = self.initial_data.get("hosting_location_name")  # Frontend field
+        if hosting_location_name:
+            try:
+                server = Servers.objects.get(server_name=hosting_location_name)
+                data["server"] = server
+            except Servers.DoesNotExist:
+                raise serializers.ValidationError({"hosting_location": "Invalid server name."})
+            
+        # Check if the server has enough capacity
+        server = data.get("server")
+        new_resource_capacity = data.get("storage_capacity", 0)
+
+        if server:
+            # Convert storage capacity to integer (assuming it's in GB or TB needs conversion)
+            total_capacity = self._convert_to_gb(server.server_capacity)
+            used_capacity = self._get_used_capacity(server)
+
+            if used_capacity + self._convert_to_gb(new_resource_capacity) > total_capacity:
+                raise serializers.ValidationError({"storage_capacity": "Not enough server capacity available."})
+
+        return data
+
+    def to_internal_value(self, data):
+        # Mapping frontend fields to backend fields
+        field_mapping = {
+            "billing_cycle": "billing_cycle",
+            "hosting_location": "server",
+            "hosting_type": "hosting_type",
+            "last_updated_date": "last_updated_date",
+            "provisioned_date": "provisioned_date",
+            "resource_cost": "resource_cost",
+            "resource_name": "resource_name",
+            "resource_type": "resource_type",
+            "storage_capacity": "storage_capacity",
+            # "hosting_location_name": "hosting_location_name",
+            # "user": "user"
+        }
+
+        # Convert frontend field names to backend field names
+        converted_data = {backend_key: data.get(frontend_key) for frontend_key, backend_key in field_mapping.items() if frontend_key in data}
+
+        # Convert hosting_location (name) to server (ID)
+        hosting_location_name = data.get("hosting_location")
+        if hosting_location_name:
+            try:
+                server = Servers.objects.get(server_name=hosting_location_name)  # Convert name to ID
+                converted_data["server"] = server.id
+            except Servers.DoesNotExist:
+                raise serializers.ValidationError({"server": "Invalid server name."})
+
+            return super().to_internal_value(converted_data)
 
     def _convert_to_gb(self, capacity):
         """ Helper function to convert capacity to GB if necessary. """
@@ -980,7 +1068,7 @@ class CustomerSerializer(serializers.ModelSerializer):
     deleted_by_username = serializers.CharField(source='deleted_by.username', read_only=True)
 
     # List of resources connected to this customer
-    resources = ResourceSerializer(many=True, read_only=True) 
+    resources = ResourceViewSerializer(many=True, read_only=True) 
 
     class Meta:
         model = Customer
@@ -1150,13 +1238,68 @@ class ServerUsageSerializer(serializers.ModelSerializer):
     def get_used(self, obj):
         """Calculate total used capacity from related resources in GB"""
         total_used = 0
-        for resource in obj.server_resources.all():
+        # for resource in obj.server_resources.all():
+        for resource in obj.server_resources.filter(is_deleted=False):  
             total_used += self.parse_capacity(resource.storage_capacity)
         return round(total_used, 2)
 
     def get_total(self, obj):
         """Get total server capacity in GB"""
         return round(self.parse_capacity(obj.server_capacity), 2)
+
+    def get_percentage(self, obj):
+        """Calculate the percentage usage safely"""
+        total = self.get_total(obj)
+        used = self.get_used(obj)
+        
+        if total <= 0:
+            return 0
+            
+        percentage = (used / total) * 100
+        return round(min(percentage, 100), 2)  # Cap at 100%
+    
+class OnPremServerUsageSerializer(serializers.ModelSerializer):
+    used = serializers.SerializerMethodField()
+    total = serializers.SerializerMethodField()
+    percentage = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Computer
+        fields = ["hardware_server_name", "used", "total", "percentage"]
+
+    def get_server_name(self, obj):
+        return obj.hardware_server_name  # Assuming `name` field stores the server name
+
+    def parse_capacity(self, capacity_str):
+        """Helper method to parse capacity strings into GB"""
+        if not capacity_str:
+            return 0
+            
+        try:
+            match = re.match(r'^(\d+\.?\d*)\s*([TGMK]?B)?$', str(capacity_str).upper())
+            if not match:
+                return 0
+                
+            value = float(match.group(1))
+            unit = match.group(2) or 'GB'  # Default to GB if no unit specified
+            
+            if unit == 'TB':
+                return value * 1024
+            elif unit == 'MB':
+                return value / 1024
+            elif unit == 'KB':
+                return value / (1024 * 1024)
+            return value
+        except (ValueError, TypeError):
+            return 0
+
+    def get_used(self, obj):
+        """Calculate total used capacity"""
+        return round(self.parse_capacity(obj.used_capacity), 2)  # Assuming `used_capacity` exists
+
+    def get_total(self, obj):
+        """Get total capacity"""
+        return round(self.parse_capacity(obj.total_capacity), 2)  # Assuming `total_capacity` exists
 
     def get_percentage(self, obj):
         """Calculate the percentage usage safely"""

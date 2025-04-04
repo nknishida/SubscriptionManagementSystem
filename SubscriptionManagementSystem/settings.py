@@ -235,6 +235,7 @@ DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
             # 'schedule': crontab(hour=9, minute=0),  # Run daily at 9 AM
 #     },
 # }
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 
 CELERY_BROKER_URL = 'redis://localhost:6379/0'
 CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'

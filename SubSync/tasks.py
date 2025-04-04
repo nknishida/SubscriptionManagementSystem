@@ -409,7 +409,7 @@ def send_in_app_notification(entity, message):
 from celery import shared_task
 from django.utils import timezone
 from datetime import timedelta
-from .models import Subscription, Hardware, Customer, User
+from .models import Subscription, Hardware, Customer, User, Warranty
 
 @shared_task
 def delete_old_recycle_bin_items():
@@ -426,66 +426,130 @@ def delete_old_recycle_bin_items():
     return "Old items permanently deleted"
 
 from django.utils.timezone import now
+from django.db import transaction,connection
 
 @shared_task
 def update_subscriptions_status():
     today = now().date()
+
+    # Debug: Check database connection
+    if connection.closed_in_transaction:
+        logger.warning("Database connection was closed. Reconnecting...")
+        connection.close()
+
+    logger.info("Starting subscription status update task")
     
     subscriptions = Subscription.objects.filter(is_deleted=False)
+    logger.info(f"Found {subscriptions.count()} active subscriptions to check.")
 
-    # Check if the end date has passed
-    if subscription.end_date and today > subscription.end_date:
-        subscription.status = "Inactive"
+    to_update = []
 
     for subscription in subscriptions:
-        if subscription.next_payment_date and today > subscription.next_payment_date:
-            if subscription.auto_renewal:
-                subscription.status = "Active"
-            else:
-                subscription.status = "Expired"
-        
-        if subscription.next_payment_date and today > subscription.next_payment_date:
+        original_status = subscription.status
+        original_payment_status = subscription.payment_status
+
+        logger.info(
+            f"Checking subscription {subscription.id}: end_date={subscription.end_date}, "
+            f"next_payment_date={subscription.next_payment_date}, today={today}"
+        )
+        # Check if the end date has passed
+        if subscription.end_date and today > subscription.end_date:
+            logger.info(f"Updating subscription {subscription.id} to Inactive")
+            subscription.status = "Inactive"
             subscription.payment_status = "Unpaid"
-        elif subscription.payment_status == "pending":
-            subscription.payment_status = "pending"
-        else:
-            subscription.payment_status = "Paid"
         
-        subscription.save(update_fields=['status', 'payment_status'])
+        else:
+            if subscription.next_payment_date:
+                if today > subscription.next_payment_date:
+                    if subscription.auto_renewal:
+                        subscription.status = "Active"
+                        subscription.payment_status = "Paid"
+                        logger.info(f"Subscription {subscription.id}: Auto-renewal is enabled, keeping Active")
+                    else:
+                        subscription.status = "Expired"
+                        logger.info(f"Subscription {subscription.id}: Auto-renewal is disabled, marking as Expired")
+                        subscription.payment_status = "Unpaid"
+                else:
+                    subscription.payment_status = "Paid"
+                    subscription.status = "Active" 
 
+        # subscription.save(update_fields=['status', 'payment_status'])
+        # logger.info(f"Subscription {subscription.id} updated: status={subscription.status}, payment_status={subscription.payment_status}")
 
-from django_celery_beat.models import PeriodicTask, IntervalSchedule
-import json
-
-def setup_periodic_tasks():
-    """Automatically create/update periodic tasks without using Django Admin."""
+        # Add only if status or payment_status changed
+        if subscription.status != original_status or subscription.payment_status != original_payment_status:
+            logger.info(
+                f"Subscription {subscription.id} updated: "
+                f"status={original_status} -> {subscription.status}, "
+                f"payment_status={original_payment_status} -> {subscription.payment_status}"
+            )
+            to_update.append(subscription)
     
-    # Schedule for updating subscription status (Runs every 1 hour)
-    schedule_1, created = IntervalSchedule.objects.get_or_create(
-        every=1, period=IntervalSchedule.HOURS
-    )
+    # Perform a bulk update if any records changed
+    if to_update:
+        logger.info(f"Updating {len(to_update)} subscriptions in bulk...")
+        with transaction.atomic():
+            Subscription.objects.bulk_update(to_update, ["status", "payment_status"])
+        logger.info("Bulk update successful.")
+    else:
+        logger.info("No subscriptions needed updating.")
 
-    PeriodicTask.objects.update_or_create(
-        name="Update Subscription Status",
-        defaults={
-            "interval": schedule_1,
-            "task": "SubSync.tasks.update_subscriptions_status",
-            "args": json.dumps([]),
-            "kwargs": json.dumps({})
-        }
-    )
+    logger.info("Subscription status update task completed.")
 
-    # Schedule for deleting old recycle bin items (Runs every 24 hours)
-    schedule_2, created = IntervalSchedule.objects.get_or_create(
-        every=24, period=IntervalSchedule.HOURS  # Runs once every day
-    )
+@shared_task
+def update_warranty_status():
+    """Task to update warranty status for all hardware."""
+    today = now().date()
+    
+    warranties = Warranty.objects.all()
+    
+    for warranty in warranties:
+        # original_status = warranty.status
+        # warranty.update_warranty_status()
+        
+        # if warranty.status != original_status:
+        #     print(f"Updated warranty for {warranty.hardware}: {original_status} -> {warranty.status}")
+        warranty.save()
+    
+    return "Warranty status updated successfully"
 
-    PeriodicTask.objects.update_or_create(
-        name="Delete Old Recycle Bin Items",
-        defaults={
-            "interval": schedule_2,
-            "task": "SubSync.tasks.delete_old_recycle_bin_items",
-            "args": json.dumps([]),
-            "kwargs": json.dumps({})
-        }
-    )
+from celery import shared_task
+from django.utils.timezone import now
+from django.db import transaction
+import logging
+from .models import Customer
+
+logger = logging.getLogger(__name__)
+
+@shared_task
+def update_customer_status():
+    """Automatically updates customer status based on end_date."""
+    today = now().date()
+    customers = Customer.objects.filter(is_deleted=False)
+
+    logger.info(f"Starting customer status update task. Found {customers.count()} customers to check.")
+
+    to_update = []
+
+    for customer in customers:
+        original_status = customer.status
+
+        logger.info(f"Checking customer {customer.id}: end_date={customer.end_date}, today={today}")
+
+        # ✅ If end_date is over, mark as Inactive
+        if customer.end_date and today > customer.end_date:
+            logger.info(f"Customer {customer.id}: End date passed, marking as Inactive")
+            customer.status = "Inactive"
+
+        # ✅ Add to bulk update if status changed
+        if customer.status != original_status:
+            logger.info(f"Customer {customer.id} updated: status={original_status} -> {customer.status}")
+            to_update.append(customer)
+
+    # ✅ Perform bulk update for efficiency
+    if to_update:
+        with transaction.atomic():
+            Customer.objects.bulk_update(to_update, ["status"])
+        logger.info(f"Updated {len(to_update)} customers in bulk.")
+
+    logger.info("Customer status update task completed.")

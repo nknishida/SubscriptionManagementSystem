@@ -93,20 +93,18 @@ class Subscription(models.Model):
         """Update the subscription status based on !end date//next_payement_date and auto-renewal."""
         today = now().date()
 
-        if self.end_date and today > self.end_date:
-            self.status = "Inactive"
-        
         if self.is_deleted:
             self.status = "Canceled"
-        elif self.next_payment_date and today > self.next_payment_date:
-            if self.auto_renewal:
-                # Auto-renewal is on; extend the end_date
-                # self.next_payment_date += relativedelta(months=1)  # Example for monthly renewal
-                self.status = "Active"
+        elif self.end_date and today > self.end_date:
+            self.status = "Inactive"
+        elif self.next_payment_date:
+            if today > self.next_payment_date:
+                if self.auto_renewal:
+                    self.status = "Active"
+                else:
+                    self.status = "Expired"
             else:
-                self.status = "Expired"
-        else:
-            self.status = "Active"
+                self.status = "Active"
 
     def update_payment_status(self):
         """Update payment status based on next payment date."""
@@ -269,6 +267,9 @@ class Servers(models.Model):
     def __str__(self):
         return self.server_name
 
+from django.utils.timezone import now
+from datetime import timedelta, date
+
 class Hardware(models.Model):
 
     # TYPE_CHOICES = [
@@ -339,11 +340,42 @@ class Warranty(models.Model):
         (5, '5 Years'),
     ]
 
+    STATUS_CHOICES = [
+        ('Active', 'Active'),
+        ('Expiring Soon', 'Expiring Soon'),
+        ('Expired', 'Expired'),
+    ]
+
+
     hardware = models.OneToOneField(Hardware, on_delete=models.CASCADE, related_name='warranty')
-    status = models.CharField(max_length=50, choices=[('Active', 'Active'), ('Expired', 'Expired')], default='Active')
+    status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='Active')
     warranty_expiry_date = models.DateField()
     is_extended_warranty = models.BooleanField(default=False)
     extended_warranty_period = models.IntegerField(choices=EXTENDED_WARRANTY_PERIODS, null=True, blank=True)
+
+    EXPIRY_THRESHOLD = 7
+
+    def save(self, *args, **kwargs):
+        if not self.pk:
+            if self.is_extended_warranty and self.extended_warranty_period:
+                # Extend the warranty expiry date
+                self.warranty_expiry_date += timedelta(days=365 * self.extended_warranty_period)
+
+        today = date.today()
+        days_remaining = (self.warranty_expiry_date - today).days
+
+        # Automatically update the status based on expiry date
+        if self.warranty_expiry_date < date.today():
+            self.status = 'Expired'
+            logger.info(f"Warranty expired for {self.hardware}")
+        elif days_remaining <= self.EXPIRY_THRESHOLD:
+            self.status = 'Expiring Soon'
+            logger.info(f"Warranty expiring soon for {self.hardware}: {days_remaining} days remaining")
+        else:
+            self.status = 'Active'
+            logger.info(f"Warranty is active for {self.hardware}: {days_remaining} days remaining")
+
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"Warranty for {self.hardware} expires on {self.warranty_expiry_date}"
@@ -462,10 +494,14 @@ logger = logging.getLogger(__name__)
 class Reminder(models.Model):
     REMINDER_TYPE_CHOICES = [
         ('renewal', 'Renewal'),
+
         ('maintenance', 'Maintenance'),
+        ('warranty', 'warranty'),
+
         ('over due', 'Over Due'),
+
         ('server break down', 'Server Break Down'),
-        ('custom', 'Custom'),
+        ('server_expiry', 'Server Expiry'),
     ]
     REMINDER_STATUS_CHOICES = [
         ('pending', 'Pending'),
@@ -666,7 +702,7 @@ class Reminder(models.Model):
 # Separate Linking Tables
 class ReminderSubscription(models.Model):
     reminder = models.ForeignKey(Reminder, on_delete=models.CASCADE, related_name='subscription_reminder')
-    subscription = models.ForeignKey('Subscription', on_delete=models.CASCADE)
+    subscription = models.ForeignKey('Subscription', on_delete=models.CASCADE ,related_name='reminder_subscriptions')
 
 class ReminderHardware(models.Model):
     reminder = models.ForeignKey(Reminder, on_delete=models.CASCADE, related_name='hardware_reminder')
@@ -754,7 +790,7 @@ class Resource(models.Model):
         ('monthly', 'Monthly'),
         ('quarterly', 'Quarterly'),
         ('biannual', 'Biannual'),
-        ('annual', 'Annual'),
+        ('yearly', 'yearly'),
     ]
 
     resource_name = models.CharField(max_length=100)

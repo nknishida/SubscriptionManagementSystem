@@ -79,7 +79,7 @@ class ForgotPasswordAPIView(APIView):
         except User.DoesNotExist:
             # Always return a generic message to avoid email enumeration
             return Response({
-                "message": "If an account with this email exists, you will receive a password reset email shortly."
+                "message": "Not the registrared user"
             }, status=status.HTTP_200_OK)
         
         token_generator = PasswordResetTokenGenerator()
@@ -114,7 +114,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny
-from .serializers import CustomerSerializer, HardwareSerializer, PasswordResetSerializer, ServerUsageSerializer, SubscriptionDetailSerializer, SubscriptionUpdateSerializer, SubscriptionWarningSerializer, UserSerializer
+from .serializers import ComputerSerializer, CustomerSerializer, HardwareSerializer, OnPremServerUsageSerializer, PasswordResetSerializer, ResourceAddSerializer, ResourceViewSerializer, ServerUsageSerializer, SubscriptionDetailSerializer, SubscriptionUpdateSerializer, SubscriptionWarningSerializer, UserSerializer
 
 User = get_user_model()
 
@@ -416,7 +416,7 @@ class WarningSubscriptionsView(generics.ListAPIView):
         next_week = today + timedelta(days=7)
         # return Subscription.objects.filter(next_payment_date__range=[today, next_week])
         return (
-            Subscription.objects.filter(next_payment_date__range=[today, next_week])
+            Subscription.objects.filter(next_payment_date__range=[today, next_week],is_deleted=False)
             .select_related(
                 "provider", "billing", "software_detail", "domain", "server"
             )  # Optimized DB queries
@@ -527,8 +527,8 @@ class ProviderCreateView(generics.CreateAPIView):
         
         print("Serializer Errors:", serializer.errors)  # Print detailed errors
         return Response(
-            {"message": "provider already exists", "status": status.HTTP_400_BAD_REQUEST, "errors": serializer.errors},
-            status=status.HTTP_400_BAD_REQUEST,message="provider already exists"
+            {"message": "Validation failed", "status": status.HTTP_400_BAD_REQUEST, "errors": serializer.errors},
+            status=status.HTTP_400_BAD_REQUEST
         )
     
 from rest_framework import generics
@@ -865,7 +865,7 @@ class SubscriptionCreateView(generics.CreateAPIView):
         required_fields = ["providerid", "subscription_category", "start_date", "billing_cycle", "cost", "payment_method"]
         for field in required_fields:
             if not data.get(field):
-                return Response({"error": f"{field.replace('_', ' ').title()} is required."}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"message": f"{field.replace('_', ' ').title()} is required."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Check for existing subscription
         # existing_subscription = Subscription.objects.filter(user=request.user,provider_id=data.get("provider"),subscription_category=data.get("subscription_category"),is_deleted=False).exists()
@@ -1657,89 +1657,99 @@ class AddHardwareAPIView(APIView):
         serializer = HardwareSerializer(data=converted_data, context={'request': request}) 
  
         if serializer.is_valid():
-            # serializer.save()
-            hardware=serializer.save(user=request.user)
-            logger.info("Successfully added hardware: %s", hardware)
+            try:
+                with transaction.atomic():
+                    hardware=serializer.save(user=request.user)
+                    logger.info("Successfully added hardware: %s", hardware)
 
-            # Extract reminder-related fields from the request data.
-            reminder_field_mapping = {
-                "reminderType": "reminder_type",
-                "reminderDaysBefore": "reminder_days_before",
-                "reminderMonthsBefore": "reminder_months_before",
-                "reminderDayOfMonth": "reminder_day_of_month",
-                "notificationMethod": "notification_method",
-                "recipients": "recipients",
-                "customMessage": "custom_message",
-                "optionalDaysBefore": "optional_days_before",
-            }
+                    # Extract reminder-related fields from the request data.
+                    reminder_field_mapping = {
+                        "reminderType": "reminder_type",
+                        "reminderDaysBefore": "reminder_days_before",
+                        "reminderMonthsBefore": "reminder_months_before",
+                        "reminderDayOfMonth": "reminder_day_of_month",
+                        "notificationMethod": "notification_method",
+                        "recipients": "recipients",
+                        "customMessage": "custom_message",
+                        "optionalDaysBefore": "optional_days_before",
+                    }
 
-            maintenance_reminder_data = {}
-            for frontend_key, backend_key in reminder_field_mapping.items():
-                if frontend_key in request.data:
-                    maintenance_reminder_data[backend_key] = request.data[frontend_key]
+                    maintenance_reminder_data = {}
+                    for frontend_key, backend_key in reminder_field_mapping.items():
+                        if frontend_key in request.data:
+                            maintenance_reminder_data[backend_key] = request.data[frontend_key]
 
-            # ✅ Apply default reminder settings if none provided (optional)
-            if not any(maintenance_reminder_data.values()):
-                 maintenance_reminder_data.update({
-                    "reminder_type": "maintenance",
-                    "reminder_days_before": 3,
-                    "notification_method": "email",
-                    "recipients": request.user.email,
-                    "custom_message": f"Your hardware {hardware.hardware_type} (SN: {hardware.serial_number}) maintenance is scheduled soon. Please check your service details.",
-                    "reminder_status": "pending"
-                })
-            # Create warranty reminder
-            warranty_reminder_data = {
-                "reminder_type": "warranty",
-                "reminder_days_before": 3,  # 30 days before warranty expires
-                "notification_method": "email",
-                "recipients": request.user.email,
-                "custom_message": f"Warranty for your {hardware.hardware_type} (SN: {hardware.serial_number}) is expiring soon.",
-                "reminder_status": "pending"
-            }
+                    # ✅ Apply default reminder settings if none provided (optional)
+                    if not any(maintenance_reminder_data.values()):
+                        maintenance_reminder_data.update({
+                            "reminder_type": "maintenance",
+                            "reminder_days_before": 3,
+                            "notification_method": "email",
+                            "recipients": request.user.email,
+                            "custom_message": f"Your hardware {hardware.hardware_type} (SN: {hardware.serial_number}) maintenance is scheduled soon. Please check your service details.",
+                            "reminder_status": "pending"
+                        })
+                    # Create warranty reminder
+                    warranty_reminder_data = {
+                        "reminder_type": "warranty",
+                        "reminder_days_before": 3,  # 30 days before warranty expires
+                        "notification_method": "email",
+                        "recipients": request.user.email,
+                        "custom_message": f"Warranty for your {hardware.hardware_type} (SN: {hardware.serial_number}) is expiring soon.",
+                        "reminder_status": "pending"
+                    }
 
-             # Create both reminders
-            for reminder_data, reminder_name in [
-                (maintenance_reminder_data, "Maintenance"),
-                (warranty_reminder_data, "Warranty")
-            ]:
-                try:
-                    reminder = Reminder.objects.create(
-                        reminder_type=reminder_data.get("reminder_type"),
-                        reminder_days_before=reminder_data.get("reminder_days_before"),
-                        reminder_months_before=reminder_data.get("reminder_months_before"),
-                        reminder_day_of_month=reminder_data.get("reminder_day_of_month"),
-                        optional_days_before=reminder_data.get("optional_days_before"),
-                        notification_method=reminder_data.get("notification_method"),
-                        recipients=reminder_data.get("recipients"),
-                        custom_message=reminder_data.get("custom_message"),
-                        reminder_status=reminder_data.get("reminder_status", "pending"),
-                    )
-                    ReminderHardware.objects.create(reminder=reminder, hardware=hardware)
-                    logger.info(f"{reminder_name} reminder created and linked to hardware: {reminder}")
-                
-                except Exception as e:
-                    logger.error(f"Failed to create {reminder_name.lower()} reminder: {str(e)}")
-                    continue
+                    # Create both reminders
+                    for reminder_data, reminder_name in [
+                        (maintenance_reminder_data, "Maintenance"),
+                        (warranty_reminder_data, "Warranty")
+                    ]:
+                        try:
+                            reminder = Reminder.objects.create(
+                                reminder_type=reminder_data.get("reminder_type"),
+                                reminder_days_before=reminder_data.get("reminder_days_before"),
+                                reminder_months_before=reminder_data.get("reminder_months_before"),
+                                reminder_day_of_month=reminder_data.get("reminder_day_of_month"),
+                                optional_days_before=reminder_data.get("optional_days_before"),
+                                notification_method=reminder_data.get("notification_method"),
+                                recipients=reminder_data.get("recipients"),
+                                custom_message=reminder_data.get("custom_message"),
+                                reminder_status=reminder_data.get("reminder_status", "pending"),
+                            )
+                            ReminderHardware.objects.create(reminder=reminder, hardware=hardware)
+                            logger.info(f"{reminder_name} reminder created and linked to hardware: {reminder}")
+                        
+                        except Exception as e:
+                            logger.error(f"Failed to create {reminder_name.lower()} reminder: {str(e)}")
+                            continue
             
-            # return Response({
-            #     "message": "Hardware successfully added.",
-            #     "data": serializer.data,
-            #     "status": status.HTTP_201_CREATED
-            # }, status=status.HTTP_201_CREATED)
+                    return Response({
+                        "message": "Hardware successfully added.",
+                        "data": serializer.data,
+                        "status": status.HTTP_201_CREATED
+                    }, status=status.HTTP_201_CREATED)
+            
+            except Exception as e:
+                logger.error("Error while saving hardware or reminders: %s", str(e))
+                return Response({"message": "Failed to add hardware due to a server error."},
+                                status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+        # logger.info("HardwareSerializer validation errors: %s", serializer.errors)
+        # return Response({
+        #     "message": "Failed to add hardware. Please check the input data.",
+        #     "errors": serializer.errors,
+        # }, status=status.HTTP_400_BAD_REQUEST)
         
         if not serializer.is_valid():
             logger.info("HardwareSerializer validation errors: %s", serializer.errors)
+            # error_messages = " ".join([f"{key}: {', '.join(value)}" for key, value in serializer.errors.items()])
+            # return Response({"message": f"Failed to add hardware. {error_messages}"}, status=status.HTTP_400_BAD_REQUEST)
+    
             return Response({
             "message": "Failed to add hardware. Please check the input data.",
             "errors": serializer.errors,
             }, status=status.HTTP_400_BAD_REQUEST)
-        if not serializer.is_valid():
-            logger.info("Validation errors: %s", serializer.errors)
-            error_messages = " ".join([f"{key}: {', '.join(value)}" for key, value in serializer.errors.items()])
-            return Response({
-                "message": f"Failed to add hardware. {error_messages}"}, status=status.HTTP_400_BAD_REQUEST)
-    
+        
     def convert_frontend_to_backend(self, data):
         try:
 
@@ -1863,7 +1873,8 @@ from rest_framework.filters import SearchFilter, OrderingFilter
 from django.db.models import F
 
 class ListHardwareView(generics.ListAPIView):
-    queryset = Hardware.objects.all()
+    # queryset = Hardware.objects.all()
+    queryset = Hardware.objects.filter(is_deleted=False)
     serializer_class = HardwareSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     
@@ -1877,7 +1888,8 @@ class ListHardwareView(generics.ListAPIView):
     ordering_fields = ['purchase__purchase_date', 'status']
 
     def get_queryset(self):
-        queryset = Hardware.objects.all()
+        # queryset = Hardware.objects.all()
+        queryset = Hardware.objects.filter(is_deleted=False)
         ordering = self.request.query_params.get('ordering', 'purchase__purchase_date')
 
         if ordering == "purchase__purchase_date":
@@ -1911,7 +1923,7 @@ from rest_framework.response import Response
 from .models import Hardware
 from .serializers import HardwareSerializer
 
-class RetrieveUpdateHardwareView(generics.RetrieveUpdateAPIView):
+class RetrieveUpdateDestroyHardwareView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Hardware.objects.all()
     serializer_class = HardwareSerializer
     permission_classes = [IsAuthenticated]
@@ -1937,6 +1949,18 @@ class RetrieveUpdateHardwareView(generics.RetrieveUpdateAPIView):
             "message": "Failed to update hardware. Please check the input data.",
             "errors": serializer.errors,
         }, status=status.HTTP_400_BAD_REQUEST)
+    
+    def destroy(self, request, *args, **kwargs):
+        """Override destroy to implement soft delete"""
+        try:
+            instance = self.get_object()
+            instance.soft_delete(deleted_by=request.user)  # Call soft delete method
+            return Response(
+                {"message": "Hardware successfully deleted.","status":status.HTTP_200_OK}, 
+                status=status.HTTP_200_OK
+            )
+        except Hardware.DoesNotExist:
+            return Response({"message": "hardware not found or already deleted."}, status=status.HTTP_404_NOT_FOUND)
 
     
 from django.db.models import Sum, Count
@@ -2105,7 +2129,7 @@ class ResourceNameListView(generics.ListAPIView):
         resource_type = self.request.query_params.get('type')
         print("resource_type:",resource_type)
         if resource_type:
-            return Resource.objects.filter(resource_type=resource_type)
+            return Resource.objects.filter(resource_type=resource_type, is_deleted=False)
         return Resource.objects.none()  # Return empty if no resource_type is provided
 
     def list(self, request, *args, **kwargs):
@@ -2119,10 +2143,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from .models import Resource
-from .serializers import ResourceSerializer
 
 class ResourceCreateView(generics.CreateAPIView):
-    serializer_class = ResourceSerializer
+    serializer_class = ResourceAddSerializer
     permission_classes = [IsAuthenticated]  # Restrict access to authenticated users
 
     def create(self, request, *args, **kwargs):
@@ -2231,7 +2254,7 @@ class DashboardOverviewAll(APIView):
 
         # Total Warnings Count
         total_warnings = renewal_subscriptions + warranty_expiring + maintenance_due 
-        total_resources=Resource.objects.filter(status="Active").count()
+        total_resources=Resource.objects.filter(status="Active",is_deleted=False).count()
         print("total_resources",total_resources)
 
         return Response({
@@ -2349,15 +2372,16 @@ class ServerListByHostingTypeAPIView(APIView):
 
         # Fetch server names based on hosting_type
         if hosting_type.lower() == "inhouse":
-            servers = Computer.objects.values_list('hardware_server_name', flat=True)
+            # servers = Computer.objects.values_list('hardware_server_name', flat=True)
+            servers = Computer.objects.filter(computer_type="Server",hardware__is_deleted=False).values_list('hardware_server_name', flat=True)
             print(servers)
 
         elif hosting_type.lower() == "external":
-            servers = Servers.objects.filter(server_type="External").values_list('server_name', flat=True)
+            servers = Servers.objects.filter(server_type="External",subscription__is_deleted=False).values_list('server_name', flat=True)
             print(servers)
 
         elif hosting_type.lower() == "cloud":
-            servers = Servers.objects.filter(server_type="Cloud").values_list('server_name', flat=True)
+            servers = Servers.objects.filter(server_type="Cloud",subscription__is_deleted=False).values_list('server_name', flat=True)
             print(servers)
 
         else:
@@ -2401,18 +2425,37 @@ class CustomerAPIView(APIView):
     
 class ServerUsageView(APIView):
     def get(self, request):
-        servers = Servers.objects.all()
-        serializer = ServerUsageSerializer(servers, many=True)
+        # servers =Servers.objects.filter(subscription__is_deleted=False)
+        # serializer = ServerUsageSerializer(servers, many=True)
 
-        for server in serializer.data:
+        # Fetch cloud servers from Servers model (excluding deleted subscriptions)
+        cloud_servers = Servers.objects.filter(subscription__is_deleted=False)
+        
+        # Fetch on-premise servers from Computer model where type is "server"
+        on_prem_servers = Computer.objects.filter(computer_type='Server', hardware__is_deleted=False)
+
+        cloud_serializer = ServerUsageSerializer(cloud_servers, many=True)
+        # on_prem_serializer = OnPremServerUsageSerializer(on_prem_servers, many=True)
+        print("On-Prem Servers:", on_prem_servers)
+
+        combined_data = cloud_serializer.data
+        # + on_prem_serializer.data        
+
+        # data = serializer.data
+        for server in combined_data:
+            if server['used'] > server['total']:
+                server['used'] = server['total']  # Cap used to total
+                server['percentage'] = 100  # Ensure percentage does not exceed 100%
+            
             print(f"Server: {server['server_name']}, Used: {server['used']}, Total: {server['total']}, Percentage: {server['percentage']}")
 
-        return Response(serializer.data)
+        return Response(combined_data, status=status.HTTP_200_OK)
     
 # ✅ API to List All Customers
 class CustomerListView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
-    queryset = Customer.objects.prefetch_related('resources').all() 
+    # queryset = Customer.objects.prefetch_related('resources').all() 
+    queryset = Customer.objects.prefetch_related('resources').filter(is_deleted=False)
     serializer_class = CustomerSerializer
 
 # ✅ API to Retrieve, Update, or Delete a Customer
@@ -2453,15 +2496,16 @@ class CustomerDetailView(generics.RetrieveUpdateDestroyAPIView):
         instance = self.get_object()
         instance.soft_delete(deleted_by=request.user)
         return Response(
-            {"message": "Customer deleted successfully!"},
-            status=status.HTTP_204_NO_CONTENT
+            {"message": "Customer deleted successfully!","status":status.HTTP_200_OK},
+            status=status.HTTP_200_OK
         )
 
 # ✅ List All Resources or Create a New Resource
 class ResourceListCreateView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated]
-    queryset = Resource.objects.all()
-    serializer_class = ResourceSerializer
+    # queryset = Resource.objects.all()
+    queryset = Resource.objects.filter(is_deleted=False)
+    serializer_class = ResourceViewSerializer
 
     # def list(self, request, *args, **kwargs):
     #     queryset = self.get_queryset()
@@ -2481,7 +2525,7 @@ class ResourceListCreateView(generics.ListCreateAPIView):
 class ResourceDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAuthenticated]
     queryset = Resource.objects.all()
-    serializer_class = ResourceSerializer
+    serializer_class = ResourceViewSerializer
 
     def retrieve(self, request, *args, **kwargs):
         """Custom response for retrieving a single resource."""

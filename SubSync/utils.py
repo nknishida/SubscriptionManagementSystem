@@ -81,7 +81,7 @@ logger = logging.getLogger(__name__)
 
 #     except Exception as e:
 #         logger.error(f"Error scheduling reminder tasks: {e}")
-DEFAULT_RENEWAL_TIME = time(20, 30, 0)
+DEFAULT_RENEWAL_TIME = time(12, 13, 0)
 
 def schedule_reminder_tasks(entity, reminder):
     """Schedule tasks for all reminder dates."""
