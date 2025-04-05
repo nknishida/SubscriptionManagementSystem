@@ -787,10 +787,10 @@ class Resource(models.Model):
         # ('pending', 'Pending'),
     ]
     BILLING_CYCLE_CHOICES = [
-        ('monthly', 'Monthly'),
-        ('quarterly', 'Quarterly'),
-        ('biannual', 'Biannual'),
-        ('yearly', 'yearly'),
+        ('monthly', 'monthly'),
+        ('quarterly', 'quarterly'),
+        # ('biannual', 'Biannual'),
+        ('annual', 'annual'),
     ]
 
     resource_name = models.CharField(max_length=100)
@@ -831,7 +831,7 @@ class Resource(models.Model):
         self.deleted_by=None
         self.save(update_fields=['is_deleted', 'deleted_at','deleted_by'])
 
-    def calculate_next_payment_date(self):
+    def calculate_next_payment_date(self,force_update=False):
         """Calculate the next payment date based on !provisioned_date //last_payment_date and billing_cycle."""
         if not self.provisioned_date:
             print("provisioned date not set")
@@ -849,22 +849,28 @@ class Resource(models.Model):
 
         # last_payement_date = self.start_date?
         # next_payment_date = self.end_date?
+        cycle_delta = cycle_mapping.get(self.billing_cycle, relativedelta())
 
         # If next_payment_date is not set, calculate it from !start_date//last_payment_date
-        if not self.next_payment_date:
-            self.next_payment_date = self.provisioned_date + cycle_mapping.get(self.billing_cycle, relativedelta(days=0))
+        if force_update or not self.next_payment_date:
+            base_date = self.last_updated_date or self.provisioned_date
+            self.next_payment_date = base_date + cycle_delta
+            print(f"1 Next Payment Date: {self.next_payment_date}")
         else:
             # If next_payment_date is set, calculate the next payment date based on the billing cycle
-            self.next_payment_date = self.next_payment_date + cycle_mapping.get(self.billing_cycle, relativedelta(days=0))
+            self.next_payment_date = self.next_payment_date + cycle_delta
+            print(f"2 Next Payment Date: {self.next_payment_date}")
 
-        print(f"Next Payment Date: {self.next_payment_date}")
+        print(f"3 Next Payment Date: {self.next_payment_date}")
         return self.next_payment_date
     
     def save(self, *args, **kwargs):
+        now = timezone.now().date()
         """Override save method to update status , payment status,and next payment date before saving."""
         
-        if not self.next_payment_date:
-            self.next_payment_date = self.calculate_next_payment_date()
+        if not self.next_payment_date or self.next_payment_date < now:
+            self.next_payment_date = self.calculate_next_payment_date(force_update=True)
+
         super().save(*args, **kwargs)
 
     def __str__(self):

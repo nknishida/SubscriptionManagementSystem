@@ -2192,6 +2192,8 @@ class DashboardOverviewAll(APIView):
         today = now().date()
         next_week = today + timedelta(days=7)
         next_month = today.replace(day=1) + timedelta(days=32)  # Approx next month start
+        first_day_of_year = today.replace(month=1, day=1)
+        last_day_of_year = today.replace(month=12, day=31)
 
         # Active Counts
         # total_active_subscriptions = Subscription.objects.filter(status="Active").count()
@@ -2219,20 +2221,33 @@ class DashboardOverviewAll(APIView):
         # total_subscription_cost = Subscription.objects.filter(status="Active").aggregate(total_cost=Sum("cost"))["total_cost"] or 0
 
         # 2️⃣ Total hardware cost (purchase + maintenance) for the current month
+        # purchase_cost = Hardware.objects.filter(
+        #     is_deleted=False,
+        #     purchase__purchase_date__gte=first_day  # Ensure the purchase was in the current month
+        # ).aggregate(total_cost=Sum("purchase__purchase_cost"))["total_cost"] or 0
         purchase_cost = Hardware.objects.filter(
             is_deleted=False,
-            purchase__purchase_date__gte=first_day  # Ensure the purchase was in the current month
-        ).aggregate(total_cost=Sum("purchase__purchase_cost"))["total_cost"] or 0        
+            purchase__purchase_date__gte=first_day_of_year,
+            purchase__purchase_date__lte=last_day_of_year
+        ).aggregate(total_cost=Sum("purchase__purchase_cost"))["total_cost"] or 0
+        
 
         # last_day = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
         last_day = date(today.year, today.month, calendar.monthrange(today.year, today.month)[1])
         print("last day",last_day)
+        # maintenance_cost = Hardware.objects.filter(
+        #     services__next_service_date__gte=first_day,
+        #     services__next_service_date__lte=last_day            
+        # ).aggregate(
+        #     total_cost=Sum("services__service_cost")
+        # )["total_cost"] or 0
         maintenance_cost = Hardware.objects.filter(
-            services__next_service_date__gte=first_day,
-            services__next_service_date__lte=last_day            
+            services__next_service_date__gte=first_day_of_year,
+            services__next_service_date__lte=last_day_of_year
         ).aggregate(
             total_cost=Sum("services__service_cost")
         )["total_cost"] or 0
+
         # maintenance_cost = HardwareService.objects.filter(
         #     next_service_date__gte=first_day,
         #     next_service_date__lte=last_day
@@ -2272,18 +2287,7 @@ class DashboardOverviewAll(APIView):
             "total_warnings": total_warnings,
             "total_resources": total_resources
 
-            # "monthly_cost_analysis": {
-            #     "subscription_cost": total_subscription_cost,
-            #     "hardware_cost": total_hardware_cost
-            # },
-
-            # "warnings": {
-            #     "renewal_subscriptions": renewal_subscriptions,
-            #     "warranty_expiring": warranty_expiring,
-            #     "maintenance_due": maintenance_due,
-            #     # "out_of_warranty": out_of_warranty,
-            #     "total_warnings": total_warnings
-            # }
+            
         })
 
 
@@ -3227,3 +3231,77 @@ class UserStatusUpdateView(generics.UpdateAPIView):
                 "data": serializer.data
             }, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from django.db.models import Sum
+from collections import defaultdict
+from datetime import date
+from .models import Hardware, Purchase, HardwareService
+
+
+class YearlyHardwareCostBreakdownAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        hardware_list = Hardware.objects.filter(is_deleted=False)
+
+        year_wise_data = defaultdict(lambda: {
+            "total_purchase_cost": 0,
+            "total_maintenance_cost": 0,
+            "total_hardware_cost": 0,
+            "hardware_cost_breakdown": []
+        })
+
+        for hardware in hardware_list:
+            # ----- Handle Purchase -----
+            if hasattr(hardware, 'purchase') and hardware.purchase.purchase_date:
+                purchase_year = hardware.purchase.purchase_date.year
+                purchase_cost = hardware.purchase.purchase_cost or 0
+
+                year_wise_data[purchase_year]["total_purchase_cost"] += purchase_cost
+                year_wise_data[purchase_year]["total_hardware_cost"] += purchase_cost
+                year_wise_data[purchase_year]["hardware_cost_breakdown"].append({
+                    "hardware_id": hardware.id,
+                    "hardware_type": hardware.hardware_type,
+                    "serial_number": hardware.serial_number,
+                    "manufacturer": hardware.manufacturer,
+                    "model_number": hardware.model_number,
+                    "purchase_cost": purchase_cost,
+                    "maintenance_cost": 0,
+                    "total_cost": purchase_cost,
+                })
+
+            # ----- Handle Maintenance -----
+            maintenance_services = hardware.services.all()
+            for service in maintenance_services:
+                if service.last_service_date:
+                    service_year = service.last_service_date.year
+                    service_cost = service.service_cost or 0
+
+                    year_wise_data[service_year]["total_maintenance_cost"] += service_cost
+                    year_wise_data[service_year]["total_hardware_cost"] += service_cost
+
+                    # Try to match existing entry for same hardware in that year
+                    found = False
+                    for item in year_wise_data[service_year]["hardware_cost_breakdown"]:
+                        if item["hardware_id"] == hardware.id:
+                            item["maintenance_cost"] += service_cost
+                            item["total_cost"] += service_cost
+                            found = True
+                            break
+
+                    if not found:
+                        year_wise_data[service_year]["hardware_cost_breakdown"].append({
+                            "hardware_id": hardware.id,
+                            "hardware_type": hardware.hardware_type,
+                            "serial_number": hardware.serial_number,
+                            "manufacturer": hardware.manufacturer,
+                            "model_number": hardware.model_number,
+                            "purchase_cost": 0,
+                            "maintenance_cost": service_cost,
+                            "total_cost": service_cost,
+                        })
+
+        return Response(year_wise_data)

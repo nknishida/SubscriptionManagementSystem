@@ -1056,7 +1056,7 @@ class CustomerSerializer(serializers.ModelSerializer):
     customer_phone = serializers.CharField(source='contact_phone')  # Mapping JSON key to model field
     customer_email = serializers.EmailField(source='email')  # Mapping JSON key to model field
     billingCycle = serializers.CharField(source='billing_cycle')
-    lastPaymentDate = serializers.DateField(source='last_payment_date')
+    # lastPaymentDate = serializers.DateField(source='last_payment_date')
     startDate = serializers.DateField(source='start_date')
     endDate = serializers.DateField(source='end_date')
     paymentMethod = serializers.CharField(source='payment_method')
@@ -1079,7 +1079,7 @@ class CustomerSerializer(serializers.ModelSerializer):
         # ]
         fields = [
             'id', 'customer_name', 'customer_phone', 'customer_email', 'status', 'customer_type', "deleted_at","deleted_by_username",
-            'paymentMethod', 'lastPaymentDate', 'startDate', 'endDate', 'billingCycle', 'cost', 'user', 'resource_ids','resources',
+            'paymentMethod', 'startDate', 'endDate', 'billingCycle', 'cost', 'user', 'resource_ids','resources',
         ]
 
     def create(self, validated_data):
