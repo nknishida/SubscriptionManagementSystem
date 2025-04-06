@@ -50,6 +50,31 @@ class PasswordResetSerializer(serializers.Serializer):
     token = serializers.CharField(help_text="Password reset token")
     new_password = serializers.CharField(min_length=8, write_only=True, help_text="New password (min. 8 characters)")
 
+    def validate_new_password(self, value):
+        """
+        Validate that the password meets complexity requirements.
+        """
+        if len(value) < 8:
+            raise serializers.ValidationError("Password must be at least 8 characters long.")
+        
+        # Check for at least one digit
+        if not re.search(r'\d', value):
+            raise serializers.ValidationError("Password must contain at least one digit.")
+        
+        # Check for at least one uppercase letter
+        if not re.search(r'[A-Z]', value):
+            raise serializers.ValidationError("Password must contain at least one uppercase letter.")
+        
+        # Check for at least one lowercase letter
+        if not re.search(r'[a-z]', value):
+            raise serializers.ValidationError("Password must contain at least one lowercase letter.")
+        
+        # Check for at least one special character
+        if not re.search(r'[!@#$%^&*(),.?":{}|<>]', value):
+            raise serializers.ValidationError("Password must contain at least one special character.")
+        
+        return value
+
 class ProviderSerializer(serializers.ModelSerializer):
 
     id = serializers.IntegerField(read_only=True) 
@@ -1088,15 +1113,21 @@ class CustomerSerializer(serializers.ModelSerializer):
     endDate = serializers.DateField(source='end_date')
     paymentMethod = serializers.CharField(source='payment_method')
     cost = serializers.DecimalField(max_digits=10, decimal_places=2)
-    # Allow assigning multiple resource IDs while creating a customer
-    # resource_ids = serializers.ListField(child=serializers.IntegerField(), write_only=True, required=False)
     resource_id = serializers.IntegerField(write_only=True, required=False)
-    # resource = serializers.PrimaryKeyRelatedField(
-    #     queryset=Resource.objects.all(),
-    #     required=False,
-    #     allow_null=True
-    # )
-    resource = ResourceBasicSerializer(read_only=True)
+    # resource = ResourceBasicSerializer(read_only=True)
+    resourceid = serializers.IntegerField(source='resource.id', read_only=True)
+    resource_name = serializers.CharField(source='resource.resource_name', read_only=True)
+    resource_type = serializers.CharField(source='resource.resource_type', read_only=True)
+    resource_status = serializers.CharField(source='resource.status', read_only=True)
+    resource_billing_cycle = serializers.CharField(source='resource.billing_cycle', read_only=True)
+    resource_cost = serializers.DecimalField(source='resource.resource_cost', max_digits=10, decimal_places=2, read_only=True)
+    storage_capacity = serializers.CharField(source='resource.storage_capacity', read_only=True)
+    provisioned_date = serializers.DateField(source='resource.provisioned_date', read_only=True)
+    next_payment_date = serializers.DateField(source='resource.next_payment_date', read_only=True)
+    hosting_type = serializers.CharField(source='resource.hosting_type', read_only=True)
+    server_name = serializers.CharField(source='resource.server.server_name', read_only=True)
+    resource_created_at = serializers.DateTimeField(source='resource.created_at', format="%Y-%m-%dT%H:%M:%S%z", read_only=True)
+    resource_updated_at = serializers.DateTimeField(source='resource.updated_at', format="%Y-%m-%dT%H:%M:%S%z", read_only=True)
 
     deleted_at = serializers.DateTimeField(format="%Y-%m-%dT%H:%M:%S%z", read_only=True)
     deleted_by_username = serializers.CharField(source='deleted_by.username', read_only=True)
@@ -1105,7 +1136,12 @@ class CustomerSerializer(serializers.ModelSerializer):
         model = Customer
         fields = [
             'id', 'customer_name', 'customer_phone', 'customer_email', 'status', 'customer_type', "deleted_at","deleted_by_username",
-            'paymentMethod', 'startDate', 'endDate', 'billingCycle', 'cost', 'user', 'resource','resource_id',
+            'paymentMethod', 'startDate', 'endDate', 'billingCycle', 'cost', 'user','resource_id',
+             # Resource fields
+            'resourceid', 'resource_name', 'resource_type', 'resource_status',
+            'resource_billing_cycle', 'resource_cost', 'storage_capacity',
+            'provisioned_date', 'next_payment_date', 'hosting_type', 'server_name',
+            'resource_created_at', 'resource_updated_at'
         ]
 
     def create(self, validated_data):

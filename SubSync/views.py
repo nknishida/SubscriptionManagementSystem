@@ -72,14 +72,14 @@ class ForgotPasswordAPIView(APIView):
         print("email:",email)
 
         if not email:
-            return Response({"error": "Email is required."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"message": "Email is required."}, status=status.HTTP_400_BAD_REQUEST)
         
         try:
             user = User.objects.get(email=email)
         except User.DoesNotExist:
             # Always return a generic message to avoid email enumeration
             return Response({
-                "message": "Not the registrared user"
+                "message": "The email address you entered isn't registered with us. Please check for typos or use a different email address.","status":status.HTTP_200_OK
             }, status=status.HTTP_200_OK)
         
         token_generator = PasswordResetTokenGenerator()
@@ -99,10 +99,20 @@ class ForgotPasswordAPIView(APIView):
             "If you didn't request this, please ignore this email.\n"
             "Thank you."
         )
-        send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [user.email], fail_silently=False)
+        try:
+            send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [user.email], fail_silently=False)
+        except Exception as e:
+            print(f"Error sending email: {e}")
+            return Response(
+                {
+                    "message": "Failed to send password reset email. Please try again later.",
+                    "status": status.HTTP_500_INTERNAL_SERVER_ERROR
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
         
         return Response({
-            "message": "If an account with this email exists, you will receive a password reset email shortly.",
+            "message": "If this email is registered with us, you'll receive a password reset link shortly. Please check your inbox.",
             'status': status.HTTP_200_OK,
         }, status=status.HTTP_200_OK)
 
@@ -135,11 +145,11 @@ class ResetPasswordAPIView(APIView):
                 print("uid:",uid)
                 user = User.objects.get(pk=uid)
             except (TypeError, ValueError, OverflowError, User.DoesNotExist):
-                return Response({"error": "Invalid uid."}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"message": "Invalid uid."}, status=status.HTTP_400_BAD_REQUEST)
             
             token_generator = PasswordResetTokenGenerator()
             if not token_generator.check_token(user, token):
-                return Response({"error": "Invalid or expired token."}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"message": "Invalid or expired token."}, status=status.HTTP_400_BAD_REQUEST)
             
             user.set_password(new_password)
             user.save()
@@ -979,7 +989,8 @@ class SubscriptionCreateView(generics.CreateAPIView):
                         print("Reminder Date Saved:", reminder.reminder_date)
 
                 return Response({
-                    'code': status.HTTP_201_CREATED,
+                    'message':"Subscription Added Succussfully",
+                    'status': status.HTTP_201_CREATED,
                     'data': serializer.data
                 }, status=status.HTTP_201_CREATED)
 
