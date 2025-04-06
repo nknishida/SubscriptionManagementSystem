@@ -2463,7 +2463,7 @@ class ServerUsageView(APIView):
 class CustomerListView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
     # queryset = Customer.objects.prefetch_related('resources').all() 
-    queryset = Customer.objects.prefetch_related('resources').filter(is_deleted=False)
+    queryset = Customer.objects.prefetch_related('resource').filter(is_deleted=False)
     serializer_class = CustomerSerializer
 
 # ✅ API to Retrieve, Update, or Delete a Customer

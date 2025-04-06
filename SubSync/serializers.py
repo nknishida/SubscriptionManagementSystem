@@ -1063,7 +1063,12 @@ class CustomerSerializer(serializers.ModelSerializer):
     cost = serializers.DecimalField(max_digits=10, decimal_places=2)
     # Allow assigning multiple resource IDs while creating a customer
     # resource_ids = serializers.ListField(child=serializers.IntegerField(), write_only=True, required=False)
-    resource_id = serializers.IntegerField(write_only=True, required=False)
+    # resource_id = serializers.IntegerField(write_only=True, required=False)
+    resource = serializers.PrimaryKeyRelatedField(
+        queryset=Resource.objects.all(),
+        required=False,
+        allow_null=True
+    )
 
     deleted_at = serializers.DateTimeField(format="%Y-%m-%dT%H:%M:%S%z", read_only=True)
     deleted_by_username = serializers.CharField(source='deleted_by.username', read_only=True)
@@ -1073,18 +1078,13 @@ class CustomerSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Customer
-        # fields = [
-        #     'id', 'customer_name', 'contact_phone', 'email', 'status', 'customer_type', 
-        #     'payment_method', 'last_payment_date', 'start_date', 'end_date', 
-        #     'billing_cycle', 'cost', 'user', 'resource_ids'
-        # ]
         fields = [
             'id', 'customer_name', 'customer_phone', 'customer_email', 'status', 'customer_type', "deleted_at","deleted_by_username",
-            'paymentMethod', 'startDate', 'endDate', 'billingCycle', 'cost', 'user', 'resource_id'
+            'paymentMethod', 'startDate', 'endDate', 'billingCycle', 'cost', 'user', 'resource'
         ]
 
     def create(self, validated_data):
-        resource_id = validated_data.pop('resource_id', None)
+        resource = validated_data.pop('resource', None)
 
         print(f"📌 Creating customer with data: {validated_data}")
 
@@ -1092,10 +1092,10 @@ class CustomerSerializer(serializers.ModelSerializer):
 
         # Assign resources to this customer
         # Resource.objects.filter(id__in=resource_ids).update(customer=customer)
-        if resource_id:
+        if resource:
             try:
-                resource = Resource.objects.get(id=resource_id)
-                if hasattr(resource, 'customer'):
+                # resource = Resource.objects.get(id=resource)
+                if hasattr(resource, 'customer_resources'):
                     raise serializers.ValidationError(
                         {"resource_id": "This resource is already assigned to another customer"}
                     )
