@@ -5,6 +5,7 @@ from django.utils.timezone import now
 from dateutil.relativedelta import relativedelta  # For date calculations
 from django.core.exceptions import ValidationError
 from django.contrib.auth import get_user_model
+from simple_history.models import HistoricalRecords
 
 
 class User(AbstractUser):
@@ -29,9 +30,25 @@ class Provider(models.Model):
     contact_email = models.EmailField()
     contact_phone = models.CharField(max_length=20)
     website = models.URLField()
+    is_deleted = models.BooleanField(default=False)  # Soft delete flag
+    deleted_at = models.DateTimeField(null=True, blank=True)  # Store delete time
+    deleted_by= models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='deleted_provider')
     # category = models.CharField(
     #     max_length=50, choices=[(c, c) for c in CATEGORY_CHOICES]
     # )
+    def soft_delete(self,deleted_by=None):
+        """Soft delete: Hide subscription without affecting status."""
+        self.is_deleted = True
+        self.deleted_at = now()
+        self.deleted_by=deleted_by
+        self.save(update_fields=['is_deleted', 'deleted_at','deleted_by'])
+
+    def restore(self):
+        """Restore subscription from soft delete."""
+        self.is_deleted = False
+        self.deleted_at = None
+        self.deleted_by=None
+        self.save(update_fields=['is_deleted', 'deleted_at','deleted_by'])
     
     def __str__(self):
         return self.provider_name
@@ -70,6 +87,8 @@ class Subscription(models.Model):
     is_deleted = models.BooleanField(default=False)  # Soft delete flag
     deleted_at = models.DateTimeField(null=True, blank=True)  # Store delete time
     deleted_by= models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='deleted_subscriptions')
+
+    history = HistoricalRecords()
 
     def soft_delete(self,deleted_by=None):
         """Soft delete: Hide subscription without affecting status."""
@@ -166,6 +185,8 @@ class SoftwareSubscriptions(models.Model):
     # features = models.TextField(blank=True, null=True)
     no_of_users = models.PositiveIntegerField(default=1)  # Ensures no negative users
 
+    history = HistoricalRecords()
+
     def clean(self):
         """ Custom validation to prevent duplicate software_id """
         if SoftwareSubscriptions.objects.filter(software_id=self.software_id).exclude(id=self.id).exists():
@@ -191,6 +212,8 @@ class Utilities(models.Model):
     consumer_no =models.IntegerField(unique=True)
     utility_name= models.CharField(max_length=255)
     utility_type = models.CharField(max_length=50, choices=UTILITY_TYPE_CHOICES)
+
+    history = HistoricalRecords()
 
     def clean(self):
         """ Custom validation to prevent duplicate consumer_no """
@@ -218,6 +241,8 @@ class Domain(models.Model):
     whois_protection = models.BooleanField(default=False, help_text="WHOIS privacy protection enabled or not")
     name_servers = models.CharField(max_length=255)
     hosting_provider = models.CharField(max_length=255)
+
+    history = HistoricalRecords()
     
     # domain_transfer_status = models.CharField(
     #     max_length=50,
@@ -254,6 +279,8 @@ class Servers(models.Model):
     server_type = models.CharField(max_length=50)
     # server_capacity = models.PositiveIntegerField(default=0, help_text="Total resource capacity (e.g., CPU, RAM, storage).")
     server_capacity= models.CharField(max_length=255)
+
+    history = HistoricalRecords()
 
     def clean(self):
         """ Custom validation to prevent duplicate server_name """
@@ -312,6 +339,8 @@ class Hardware(models.Model):
     
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='hardware')
 
+    history = HistoricalRecords()
+
     def __str__(self):
         return f"{self.hardware_type} ({self.serial_number})"
     
@@ -353,6 +382,8 @@ class Warranty(models.Model):
     is_extended_warranty = models.BooleanField(default=False)
     extended_warranty_period = models.IntegerField(choices=EXTENDED_WARRANTY_PERIODS, null=True, blank=True)
 
+    history = HistoricalRecords()
+
     EXPIRY_THRESHOLD = 7
 
     def save(self, *args, **kwargs):
@@ -385,6 +416,8 @@ class Purchase(models.Model):
     purchase_date = models.DateField()
     purchase_cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
+    history = HistoricalRecords()
+
     def __str__(self):
         return f"Purchase for {self.hardware} on {self.purchase_date}"
 
@@ -396,6 +429,8 @@ class HardwareService(models.Model):
     service_cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     service_provider = models.CharField(max_length=100, null=True, blank=True)
     # service_notes = models.TextField(null=True, blank=True)
+
+    history = HistoricalRecords()
 
     def __str__(self):
         return f"Service for {self.hardware} on {self.last_service_date}"
@@ -417,6 +452,8 @@ class Computer(models.Model):
     hardware_server_name = models.CharField(max_length=100,blank=True, null=True)
     operating_system = models.CharField(max_length=100,blank=True, null=True)
 
+    history = HistoricalRecords()
+
     def __str__(self):
         return f"{self.computer_type}: {self.hardware}"
     
@@ -432,6 +469,8 @@ class PortableDevice(models.Model):
     storage = models.CharField(max_length=100)
     imei_number = models.CharField(max_length=100, null=True, blank=True)  # Only for Mobile Phone
 
+    history = HistoricalRecords()
+
     def __str__(self):
         return f"{self.device_type}: {self.hardware}"
 
@@ -441,6 +480,8 @@ class NetworkDevice(models.Model):
     ip_address = models.CharField(max_length=100)
     name_specification=models.CharField(max_length=100)
 
+    history = HistoricalRecords()
+
     def __str__(self):
         return f"Network Device: {self.hardware}"
     
@@ -448,6 +489,8 @@ class AirConditioner(models.Model):
     hardware = models.OneToOneField(Hardware, on_delete=models.CASCADE, related_name='air_conditioner')
     btu_rating = models.CharField(max_length=100)
     energy_rating = models.CharField(max_length=100)
+
+    history = HistoricalRecords()
 
     def __str__(self):
         return f"Air Conditioner: {self.hardware}"
@@ -470,6 +513,8 @@ class Printer(models.Model):
     print_speed = models.CharField(max_length=100)
     connectivity = models.CharField(max_length=100)
 
+    history = HistoricalRecords()
+
     def __str__(self):
         return f"Printer: {self.hardware}"
     
@@ -478,6 +523,8 @@ class Scanner(models.Model):
     scan_resolution = models.CharField(max_length=100)
     scan_type = models.CharField(max_length=100)
     connectivity = models.CharField(max_length=100)
+
+    history = HistoricalRecords()
 
     def __str__(self):
         return f"Scanner: {self.hardware}"
@@ -762,6 +809,8 @@ class Resource(models.Model):
     server = models.ForeignKey(Servers, on_delete=models.CASCADE, related_name='server_resources')
     # customer = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True, blank=True, related_name='resources')
 
+    history = HistoricalRecords()
+
     def soft_delete(self,deleted_by=None):
         """Soft delete: Hide subscription without affecting status."""
         self.is_deleted = True
@@ -838,7 +887,7 @@ class Customer(models.Model):
     contact_phone = models.CharField(max_length=20)
     email = models.EmailField()
     status = models.CharField(max_length=20, choices=[(s, s) for s in STATUS_CHOICES])
-    customer_type = models.CharField(max_length=50)
+    # customer_type = models.CharField(max_length=50)
     payment_method= models.CharField(max_length=20)
     last_payment_date = models.DateField(null=True, blank=True)
     start_date = models.DateField()
@@ -855,6 +904,8 @@ class Customer(models.Model):
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='customers')
     resource = models.OneToOneField(Resource, on_delete=models.SET_NULL, related_name='customer_resources', null=True, blank=True)
+
+    history = HistoricalRecords()
 
     def __str__(self):
         return self.customer_name

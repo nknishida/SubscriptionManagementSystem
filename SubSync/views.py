@@ -1202,10 +1202,18 @@ class SubscriptionDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
 
     def perform_update(self, serializer):
         instance=serializer.save(updated_by=self.request.user)
+        # Set history tracking info
+        # update_change_reason(instance, f"Updated subscription by {self.request.user}")
+        instance.history_user = self.request.user
+        instance.save()  # Must call save() to persist history_user
         logger.info(f"Subscription {instance.id} updated successfully by {self.request.user}")
 
     def perform_destroy(self, instance):
         print(f"Soft deleting subscription with ID: {instance.id}")
+        # Track soft delete reason
+        # update_change_reason(instance, f"Soft deleted by {self.request.user}")
+        instance.history_user = self.request.user
+        instance.save()
         instance.soft_delete(deleted_by=self.request.user)
 
     def patch(self, request, *args, **kwargs):
@@ -1213,7 +1221,7 @@ class SubscriptionDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
         try:
             response = self.partial_update(request, *args, **kwargs)
             logger.info(f"Subscription {kwargs.get('pk')} patched successfully.")
-            return Response({"success": True, "message": "Subscription updated successfully."}, status=status.HTTP_200_OK)
+            return Response({"status": status.HTTP_200_OK, "message": "Subscription updated successfully."}, status=status.HTTP_200_OK)
         except ValidationError as e:
             logger.error(f"Validation error while updating subscription: {str(e)}")
             return Response({"error": str(e)},status=status.HTTP_400_BAD_REQUEST)
@@ -3320,3 +3328,19 @@ class YearlyHardwareCostBreakdownAPIView(APIView):
                         })
 
         return Response(year_wise_data)
+
+from rest_framework import generics, status
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from .models import Provider
+from .serializers import ProviderSerializer
+
+class ProviderDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Provider.objects.filter(is_deleted=False)
+    serializer_class = ProviderSerializer
+    permission_classes = [IsAuthenticated]
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        instance.soft_delete(deleted_by=request.user)  # Soft delete with user
+        return Response({"detail": "Provider deleted successfully."}, status=status.HTTP_204_NO_CONTENT)

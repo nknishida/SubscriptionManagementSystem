@@ -76,6 +76,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt.token_blacklist',
     "django_celery_beat",
     'SubSync.apps.SubsyncConfig',
+    'simple_history',
 
 ]
 
@@ -88,6 +89,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'corsheaders.middleware.CorsMiddleware',
+    'simple_history.middleware.HistoryRequestMiddleware',
 ]
 
 

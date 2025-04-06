@@ -92,10 +92,18 @@ class ProviderSerializer(serializers.ModelSerializer):
 
     def validate_provider_name(self, value):
         """Ensure provider name is unique and not empty."""
-        if Provider.objects.filter(provider_name=value).exists():
-            raise serializers.ValidationError("Provider name must be unique.")
         if not value.strip():
             raise serializers.ValidationError("Provider name cannot be empty.")
+        
+        provider_qs = Provider.objects.filter(provider_name=value)
+
+        # Exclude self if updating
+        if self.instance:
+            provider_qs = provider_qs.exclude(pk=self.instance.pk)
+
+        if provider_qs.exists():
+            raise serializers.ValidationError("Provider name must be unique.")
+        
         return value
     
     def validate_provider_contact(self, value):
@@ -103,7 +111,6 @@ class ProviderSerializer(serializers.ModelSerializer):
         if value and not re.match(r'^\d{7,15}$', value):
             raise serializers.ValidationError("Phone number must contain only digits and be between 7 to 15 characters long.")
         return value
-    
     
 
     # def validate_providerEmail(self, value):
@@ -439,8 +446,10 @@ class SubscriptionUpdateSerializer(serializers.ModelSerializer):
         for attr, value in data.items():
             print(f"Updating {attr} to {value}")
             setattr(model_instance, attr, value)
+        if hasattr(model_instance, 'updated_by') and hasattr(self.context['request'], 'user'):
+            model_instance.updated_by = self.context['request'].user
         model_instance.save()
-        print("after update:",model_instance)
+        print("after update:",model_instance)     
     
 class SubscriptionWarningSerializer(serializers.ModelSerializer):
     providerid = serializers.IntegerField(source="provider.id", read_only=True)
@@ -1135,7 +1144,7 @@ class CustomerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Customer
         fields = [
-            'id', 'customer_name', 'customer_phone', 'customer_email', 'status', 'customer_type', "deleted_at","deleted_by_username",
+            'id', 'customer_name', 'customer_phone', 'customer_email', 'status', "deleted_at","deleted_by_username",
             'paymentMethod', 'startDate', 'endDate', 'billingCycle', 'cost', 'user','resource_id',
              # Resource fields
             'resourceid', 'resource_name', 'resource_type', 'resource_status',
