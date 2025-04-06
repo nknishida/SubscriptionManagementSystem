@@ -797,7 +797,7 @@ class ReminderSerializer(serializers.ModelSerializer):
 class ResourceNameSerializer(serializers.ModelSerializer):
     class Meta:
         model = Resource
-        fields = ['resource_name']
+        fields = ['id','resource_name']
 
 
 # class ResourceSerializer(serializers.ModelSerializer):
@@ -869,7 +869,7 @@ class CustomerBasicSerializer(serializers.ModelSerializer):
         # fields = ['id', 'customer_name', 'customer_phone', 'customer_email', 'status']
 
 class ResourceAddSerializer(serializers.ModelSerializer):
-    customer = CustomerBasicSerializer(read_only=True)
+    # customer = CustomerBasicSerializer(read_only=True)
     
     class Meta:
         model = Resource
@@ -1062,13 +1062,14 @@ class CustomerSerializer(serializers.ModelSerializer):
     paymentMethod = serializers.CharField(source='payment_method')
     cost = serializers.DecimalField(max_digits=10, decimal_places=2)
     # Allow assigning multiple resource IDs while creating a customer
-    resource_ids = serializers.ListField(child=serializers.IntegerField(), write_only=True, required=False)
+    # resource_ids = serializers.ListField(child=serializers.IntegerField(), write_only=True, required=False)
+    resource_id = serializers.IntegerField(write_only=True, required=False)
 
     deleted_at = serializers.DateTimeField(format="%Y-%m-%dT%H:%M:%S%z", read_only=True)
     deleted_by_username = serializers.CharField(source='deleted_by.username', read_only=True)
 
     # List of resources connected to this customer
-    resources = ResourceViewSerializer(many=True, read_only=True) 
+    # resources = ResourceViewSerializer(many=True, read_only=True) 
 
     class Meta:
         model = Customer
@@ -1079,11 +1080,11 @@ class CustomerSerializer(serializers.ModelSerializer):
         # ]
         fields = [
             'id', 'customer_name', 'customer_phone', 'customer_email', 'status', 'customer_type', "deleted_at","deleted_by_username",
-            'paymentMethod', 'startDate', 'endDate', 'billingCycle', 'cost', 'user', 'resource_ids','resources',
+            'paymentMethod', 'startDate', 'endDate', 'billingCycle', 'cost', 'user', 'resource_id'
         ]
 
     def create(self, validated_data):
-        resource_ids = validated_data.pop('resource_ids', [])  # Extract resource IDs if provided
+        resource_id = validated_data.pop('resource_id', None)
 
         print(f"📌 Creating customer with data: {validated_data}")
 
@@ -1091,9 +1092,20 @@ class CustomerSerializer(serializers.ModelSerializer):
 
         # Assign resources to this customer
         # Resource.objects.filter(id__in=resource_ids).update(customer=customer)
-        if resource_ids:
-            print(f"🔗 Assigning resources {resource_ids} to customer {customer.id}")  
-            Resource.objects.filter(id__in=resource_ids).update(customer=customer)
+        if resource_id:
+            try:
+                resource = Resource.objects.get(id=resource_id)
+                if hasattr(resource, 'customer'):
+                    raise serializers.ValidationError(
+                        {"resource_id": "This resource is already assigned to another customer"}
+                    )
+                customer.resource = resource
+                customer.save()
+            except Resource.DoesNotExist:
+                raise serializers.ValidationError(
+                    {"resource_id": "Invalid resource ID"}
+                )
+            print(f"🔗 Assigning resource: {resource} to customer: {customer.id}")
 
         return customer
     

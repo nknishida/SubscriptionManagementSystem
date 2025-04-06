@@ -2417,12 +2417,16 @@ class CustomerAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        # resource_id = request.data.get('resource_name', [])
+        
         serializer = CustomerSerializer(data=data)
 
         if serializer.is_valid():
             customer = serializer.save()
             print(f"✅ Customer saved successfully: {customer}")
-            return Response({"message": "Customer added successfully", "customer": serializer.data ,"status":status.HTTP_201_CREATED}, status=status.HTTP_201_CREATED)
+            return Response({"message": "Customer added successfully",
+                            # "customer": serializer.data
+                            "customer": CustomerSerializer(customer).data,"status":status.HTTP_201_CREATED}, status=status.HTTP_201_CREATED)
         
         print(f"❌ Validation failed: {serializer.errors}") 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
