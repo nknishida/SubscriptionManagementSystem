@@ -1052,6 +1052,33 @@ class NotificationSerializer(serializers.ModelSerializer):
         model = Notification
         fields = ["id", "subscription", "message", "is_read", "created_at"]
 
+class ResourceBasicSerializer(serializers.ModelSerializer):
+    # Remove the redundant source='hosting_type' since field name matches model field
+    hosting_type = serializers.CharField(allow_null=True)
+    server_name = serializers.CharField(source='server.server_name', read_only=True)
+    
+    class Meta:
+        model = Resource
+        fields = [
+            'id',
+            'resource_name',
+            'resource_type',
+            'status',
+            'billing_cycle',
+            'resource_cost',
+            'storage_capacity',
+            'provisioned_date',
+            'next_payment_date',
+            'hosting_type',
+            'server_name',
+            'created_at',
+            'updated_at'
+        ]
+        extra_kwargs = {
+            'created_at': {'format': '%Y-%m-%dT%H:%M:%S%z'},
+            'updated_at': {'format': '%Y-%m-%dT%H:%M:%S%z'}
+        }
+
 class CustomerSerializer(serializers.ModelSerializer):
     customer_phone = serializers.CharField(source='contact_phone')  # Mapping JSON key to model field
     customer_email = serializers.EmailField(source='email')  # Mapping JSON key to model field
@@ -1063,28 +1090,26 @@ class CustomerSerializer(serializers.ModelSerializer):
     cost = serializers.DecimalField(max_digits=10, decimal_places=2)
     # Allow assigning multiple resource IDs while creating a customer
     # resource_ids = serializers.ListField(child=serializers.IntegerField(), write_only=True, required=False)
-    # resource_id = serializers.IntegerField(write_only=True, required=False)
-    resource = serializers.PrimaryKeyRelatedField(
-        queryset=Resource.objects.all(),
-        required=False,
-        allow_null=True
-    )
+    resource_id = serializers.IntegerField(write_only=True, required=False)
+    # resource = serializers.PrimaryKeyRelatedField(
+    #     queryset=Resource.objects.all(),
+    #     required=False,
+    #     allow_null=True
+    # )
+    resource = ResourceBasicSerializer(read_only=True)
 
     deleted_at = serializers.DateTimeField(format="%Y-%m-%dT%H:%M:%S%z", read_only=True)
     deleted_by_username = serializers.CharField(source='deleted_by.username', read_only=True)
-
-    # List of resources connected to this customer
-    # resources = ResourceViewSerializer(many=True, read_only=True) 
 
     class Meta:
         model = Customer
         fields = [
             'id', 'customer_name', 'customer_phone', 'customer_email', 'status', 'customer_type', "deleted_at","deleted_by_username",
-            'paymentMethod', 'startDate', 'endDate', 'billingCycle', 'cost', 'user', 'resource'
+            'paymentMethod', 'startDate', 'endDate', 'billingCycle', 'cost', 'user', 'resource','resource_id',
         ]
 
     def create(self, validated_data):
-        resource = validated_data.pop('resource', None)
+        resource_id = validated_data.pop('resource_id', None)
 
         print(f"📌 Creating customer with data: {validated_data}")
 
@@ -1092,9 +1117,9 @@ class CustomerSerializer(serializers.ModelSerializer):
 
         # Assign resources to this customer
         # Resource.objects.filter(id__in=resource_ids).update(customer=customer)
-        if resource:
+        if resource_id:
             try:
-                # resource = Resource.objects.get(id=resource)
+                resource = Resource.objects.get(id=resource_id)
                 if hasattr(resource, 'customer_resources'):
                     raise serializers.ValidationError(
                         {"resource_id": "This resource is already assigned to another customer"}
