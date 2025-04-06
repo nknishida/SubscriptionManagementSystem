@@ -1398,3 +1398,14 @@ class UserStatusUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['is_active']
+
+from simple_history.models import HistoricalRecords
+
+class SubscriptionHistorySerializer(serializers.ModelSerializer):
+    user = serializers.CharField(source='history_user.username')
+    change_reason = serializers.CharField(source='history_change_reason')
+    history_date = serializers.DateTimeField()
+
+    class Meta:
+        model = Subscription.history.model
+        fields = '__all__'

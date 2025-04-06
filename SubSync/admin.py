@@ -25,3 +25,11 @@ class CustomUserAdmin(UserAdmin):
     )
 
 admin.site.register(User, CustomUserAdmin)
+
+# from simple_history.admin import SimpleHistoryAdmin
+
+# @admin.register(Subscription)
+# class SubscriptionAdmin(SimpleHistoryAdmin):
+#     history_list_display = ["status", "payment_status", "updated_by"]
+#     search_fields = ['subscription_category', 'user__username']
+#     list_filter = ['status', 'payment_status']

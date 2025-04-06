@@ -89,6 +89,12 @@ class Subscription(models.Model):
     deleted_by= models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='deleted_subscriptions')
 
     history = HistoricalRecords()
+    # history = HistoricalRecords(
+    # cascade_delete_history=True,  # Delete history when model is deleted
+    # excluded_fields=['updated_at'],  # Exclude auto-updated fields
+    # history_change_reason_field=models.TextField(null=True),
+    # inherit=True  # For model inheritance
+    # )
 
     def soft_delete(self,deleted_by=None):
         """Soft delete: Hide subscription without affecting status."""

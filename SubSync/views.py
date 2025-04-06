@@ -124,7 +124,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny
-from .serializers import ComputerSerializer, CustomerSerializer, HardwareSerializer, OnPremServerUsageSerializer, PasswordResetSerializer, ResourceAddSerializer, ResourceViewSerializer, ServerUsageSerializer, SubscriptionDetailSerializer, SubscriptionUpdateSerializer, SubscriptionWarningSerializer, UserSerializer
+from .serializers import ComputerSerializer, CustomerSerializer, HardwareSerializer, OnPremServerUsageSerializer, PasswordResetSerializer, ResourceAddSerializer, ResourceViewSerializer, ServerUsageSerializer, SubscriptionDetailSerializer, SubscriptionHistorySerializer, SubscriptionUpdateSerializer, SubscriptionWarningSerializer, UserSerializer
 
 User = get_user_model()
 
@@ -1221,7 +1221,7 @@ class SubscriptionDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
         try:
             response = self.partial_update(request, *args, **kwargs)
             logger.info(f"Subscription {kwargs.get('pk')} patched successfully.")
-            return Response({"status": status.HTTP_200_OK, "message": "Subscription updated successfully."}, status=status.HTTP_200_OK)
+            return Response({"status": status.HTTP_200_OK, "message": "Subscription updated successfully.","data": response.data}, status=status.HTTP_200_OK)
         except ValidationError as e:
             logger.error(f"Validation error while updating subscription: {str(e)}")
             return Response({"error": str(e)},status=status.HTTP_400_BAD_REQUEST)
@@ -3344,3 +3344,10 @@ class ProviderDetailView(generics.RetrieveUpdateDestroyAPIView):
         instance = self.get_object()
         instance.soft_delete(deleted_by=request.user)  # Soft delete with user
         return Response({"detail": "Provider deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
+
+class SubscriptionHistoryView(generics.ListAPIView):
+    serializer_class = SubscriptionHistorySerializer
+    
+    def get_queryset(self):
+        subscription_id = self.kwargs['pk']
+        return Subscription.history.filter(id=subscription_id).select_related('history_user')
