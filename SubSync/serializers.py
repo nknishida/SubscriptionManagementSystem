@@ -263,6 +263,7 @@ class SubscriptionDetailSerializer(serializers.ModelSerializer):
 
     deleted_at = serializers.DateTimeField(format="%Y-%m-%dT%H:%M:%S%z", read_only=True)
     deleted_by_username = serializers.CharField(source='deleted_by.username', read_only=True)
+    last_payment_date = serializers.DateField(format="%Y-%m-%d", read_only=True)
 
     class Meta:
         model = Subscription
@@ -1123,20 +1124,20 @@ class CustomerSerializer(serializers.ModelSerializer):
     paymentMethod = serializers.CharField(source='payment_method')
     cost = serializers.DecimalField(max_digits=10, decimal_places=2)
     resource_id = serializers.IntegerField(write_only=True, required=False)
-    # resource = ResourceBasicSerializer(read_only=True)
-    resourceid = serializers.IntegerField(source='resource.id', read_only=True)
-    resource_name = serializers.CharField(source='resource.resource_name', read_only=True)
-    resource_type = serializers.CharField(source='resource.resource_type', read_only=True)
-    resource_status = serializers.CharField(source='resource.status', read_only=True)
-    resource_billing_cycle = serializers.CharField(source='resource.billing_cycle', read_only=True)
-    resource_cost = serializers.DecimalField(source='resource.resource_cost', max_digits=10, decimal_places=2, read_only=True)
-    storage_capacity = serializers.CharField(source='resource.storage_capacity', read_only=True)
-    provisioned_date = serializers.DateField(source='resource.provisioned_date', read_only=True)
-    next_payment_date = serializers.DateField(source='resource.next_payment_date', read_only=True)
-    hosting_type = serializers.CharField(source='resource.hosting_type', read_only=True)
-    server_name = serializers.CharField(source='resource.server.server_name', read_only=True)
-    resource_created_at = serializers.DateTimeField(source='resource.created_at', format="%Y-%m-%dT%H:%M:%S%z", read_only=True)
-    resource_updated_at = serializers.DateTimeField(source='resource.updated_at', format="%Y-%m-%dT%H:%M:%S%z", read_only=True)
+    resource = ResourceBasicSerializer(read_only=True)
+    # resourceid = serializers.IntegerField(source='resource.id', read_only=True)
+    # resource_name = serializers.CharField(source='resource.resource_name', read_only=True)
+    # resource_type = serializers.CharField(source='resource.resource_type', read_only=True)
+    # resource_status = serializers.CharField(source='resource.status', read_only=True)
+    # resource_billing_cycle = serializers.CharField(source='resource.billing_cycle', read_only=True)
+    # resource_cost = serializers.DecimalField(source='resource.resource_cost', max_digits=10, decimal_places=2, read_only=True)
+    # storage_capacity = serializers.CharField(source='resource.storage_capacity', read_only=True)
+    # provisioned_date = serializers.DateField(source='resource.provisioned_date', read_only=True)
+    # next_payment_date = serializers.DateField(source='resource.next_payment_date', read_only=True)
+    # hosting_type = serializers.CharField(source='resource.hosting_type', read_only=True)
+    # server_name = serializers.CharField(source='resource.server.server_name', read_only=True)
+    # resource_created_at = serializers.DateTimeField(source='resource.created_at', format="%Y-%m-%dT%H:%M:%S%z", read_only=True)
+    # resource_updated_at = serializers.DateTimeField(source='resource.updated_at', format="%Y-%m-%dT%H:%M:%S%z", read_only=True)
 
     deleted_at = serializers.DateTimeField(format="%Y-%m-%dT%H:%M:%S%z", read_only=True)
     deleted_by_username = serializers.CharField(source='deleted_by.username', read_only=True)
@@ -1145,12 +1146,12 @@ class CustomerSerializer(serializers.ModelSerializer):
         model = Customer
         fields = [
             'id', 'customer_name', 'customer_phone', 'customer_email', 'status', "deleted_at","deleted_by_username",
-            'paymentMethod', 'startDate', 'endDate', 'billingCycle', 'cost', 'user','resource_id',
+            'paymentMethod', 'startDate', 'endDate', 'billingCycle', 'cost', 'user','resource_id','resource'
              # Resource fields
-            'resourceid', 'resource_name', 'resource_type', 'resource_status',
-            'resource_billing_cycle', 'resource_cost', 'storage_capacity',
-            'provisioned_date', 'next_payment_date', 'hosting_type', 'server_name',
-            'resource_created_at', 'resource_updated_at'
+            # 'resourceid', 'resource_name', 'resource_type', 'resource_status',
+            # 'resource_billing_cycle', 'resource_cost', 'storage_capacity',
+            # 'provisioned_date', 'next_payment_date', 'hosting_type', 'server_name',
+            # 'resource_created_at', 'resource_updated_at'
         ]
 
     def create(self, validated_data):
