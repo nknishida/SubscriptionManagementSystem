@@ -992,7 +992,7 @@ class ResourceAddSerializer(serializers.ModelSerializer):
         return sum(self._convert_to_gb(resource.storage_capacity) for resource in server.server_resources.all())
     
 class ResourceViewSerializer(serializers.ModelSerializer):
-    customer = CustomerBasicSerializer(read_only=True)
+    customer_resources = CustomerBasicSerializer(read_only=True)
     server = ServerSerializer(read_only=True)
     
     class Meta:

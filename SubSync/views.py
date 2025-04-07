@@ -2282,8 +2282,10 @@ class DashboardOverviewAll(APIView):
         renewal_subscriptions = Subscription.objects.filter(next_payment_date__range=[today, next_week]).count()
 
         # Hardware Warnings
-        warranty_expiring = Hardware.objects.filter(is_deleted=False, warranty__warranty_expiry_date__lte=now() + timedelta(days=30)).count()
-        maintenance_due = Hardware.objects.filter(status="maintenance_due", is_deleted=False).count()
+        # warranty_expiring = Hardware.objects.filter(is_deleted=False, warranty__warranty_expiry_date__lte=now() + timedelta(days=30)).count()
+        warranty_expiring = Hardware.objects.filter(is_deleted=False,warranty__status="Expiring Soon").count()
+        # maintenance_due = Hardware.objects.filter(status="maintenance_due", is_deleted=False).count()
+        maintenance_due = Hardware.objects.filter(is_deleted=False,services__next_service_date__range=[today, today + timedelta(days=7)]).distinct().count()
         # out_of_warranty = Hardware.objects.filter(is_deleted=False, warranty__warranty_expiry_date__lte=now()).count()
 
         # Total Warnings Count
@@ -2551,7 +2553,7 @@ class ResourceListCreateView(generics.ListCreateAPIView):
 # ✅ Retrieve, Update, or Delete a Specific Resource
 class ResourceDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAuthenticated]
-    queryset = Resource.objects.all()
+    queryset = Resource.objects.filter(is_deleted=False)
     serializer_class = ResourceViewSerializer
 
     def retrieve(self, request, *args, **kwargs):

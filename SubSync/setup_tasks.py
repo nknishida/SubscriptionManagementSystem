@@ -63,4 +63,16 @@ def setup_periodic_tasks():
         }
     )
 
+    schedule_clean, _ = IntervalSchedule.objects.get_or_create(
+    every=30, period=IntervalSchedule.DAYS
+    )
+    PeriodicTask.objects.update_or_create(
+        name="Clean Old History",
+        defaults={
+            "interval": schedule_clean,
+            "task": "SubSync.tasks.clean_old_history",
+            "kwargs": json.dumps({"days_to_keep": 90})  # Keep 3 months history
+        }
+    )
+    
     print("Periodic tasks have been set up successfully!")

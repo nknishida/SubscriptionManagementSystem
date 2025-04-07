@@ -55,7 +55,7 @@ class Provider(models.Model):
 
 class Subscription(models.Model):
     CATEGORY_CHOICES = ['Software', 'Billing', 'Server', 'Domain']
-    PAYMENT_STATUS_CHOICES = ['Paid',  'Unpaid','pending']
+    PAYMENT_STATUS_CHOICES = ['Paid', 'pending']
     STATUS_CHOICES = ['Active', 'Expired', 'Canceled']
     subscription_category = models.CharField(
         max_length=50, choices=[(c, c) for c in CATEGORY_CHOICES]
@@ -158,25 +158,40 @@ class Subscription(models.Model):
             'triennial': relativedelta(years=3),
         }
 
-        # last_payement_date = self.start_date?
-        # next_payment_date = self.end_date?
+        base_date = self.last_payment_date if self.last_payment_date else self.start_date
+        cycle_delta = cycle_mapping.get(self.billing_cycle.lower(), relativedelta())
 
         # If next_payment_date is not set, calculate it from !start_date//last_payment_date
-        if not self.next_payment_date:
-            self.next_payment_date = self.start_date + cycle_mapping.get(self.billing_cycle, relativedelta(days=0))
+        if not self.next_payment_date or self.next_payment_date < timezone.now().date():
+            self.next_payment_date = base_date + cycle_delta
         else:
-            # If next_payment_date is set, calculate the next payment date based on the billing cycle
-            self.next_payment_date = self.next_payment_date + cycle_mapping.get(self.billing_cycle, relativedelta(days=0))
+            # If next_payment_date exists, calculate from that
+            self.next_payment_date = self.next_payment_date + cycle_delta
+        
+        if self.end_date and self.next_payment_date > self.end_date:
+            self.next_payment_date = self.end_date
 
         print(f"Next Payment Date: {self.next_payment_date}")
         return self.next_payment_date
 
     def save(self, *args, **kwargs):
         """Override save method to update status , payment status,and next payment date before saving."""
+        if not self.last_payment_date:
+            self.last_payment_date = self.start_date
+        
+        if self.pk:  # Only for existing instances
+            original = Subscription.objects.get(pk=self.pk)
+            # If last_payment_date changed, recalculate next_payment_date
+            if original.last_payment_date != self.last_payment_date:
+                self.next_payment_date = self.calculate_next_payment_date()
+        else:
+            # New object: first-time calculation
+            self.next_payment_date = self.calculate_next_payment_date()
+
         self.update_status()
         self.update_payment_status()
-        if not self.next_payment_date:
-            self.next_payment_date = self.calculate_next_payment_date()
+        # if not self.next_payment_date:
+        #     self.next_payment_date = self.calculate_next_payment_date()
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -321,7 +336,8 @@ class Hardware(models.Model):
     STATUS_CHOICES = [
         ('Active', 'Active'),
         ('Inactive', 'Inactive'),
-        ('Maintenance', 'Maintenance')
+        # ('Maintenance', 'Maintenance')
+        ('retired', 'Retired'),
     ]
 
     # hardware_name = models.CharField(max_length=100)
@@ -799,7 +815,8 @@ class Resource(models.Model):
     storage_capacity = models.CharField(max_length=100, blank=True, null=True)
     provisioned_date = models.DateField(null=True, blank=True)
     next_payment_date = models.DateField(null=True, blank=True)
-    last_updated_date = models.DateField(auto_now=True)
+    last_payement_date = models.DateField(null=True, blank=True)
+    payment_method = models.CharField(max_length=50)
 
     hosting_type = models.CharField(max_length=100, blank=True, null=True)
     # hosting_location_name= models.CharField(max_length=100, blank=True, null=True)
