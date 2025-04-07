@@ -5,12 +5,12 @@ def setup_periodic_tasks():
     """Automatically create/update periodic tasks in django-celery-beat."""
     
     # Schedule for updating subscription status (Runs every 1 hour)
-    # schedule_1, _ = IntervalSchedule.objects.get_or_create(
-    #     every=1, period=IntervalSchedule.HOURS
-    # )
     schedule_1, _ = IntervalSchedule.objects.get_or_create(
-    every=5, period=IntervalSchedule.MINUTES  # Change HOURS → MINUTES
+        every=1, period=IntervalSchedule.HOURS
     )
+    # schedule_1, _ = IntervalSchedule.objects.get_or_create(
+    # every=5, period=IntervalSchedule.MINUTES  # Change HOURS → MINUTES
+    # )
     PeriodicTask.objects.update_or_create(
         name="Update Subscription Status",
         defaults={
@@ -72,6 +72,19 @@ def setup_periodic_tasks():
             "interval": schedule_clean,
             "task": "SubSync.tasks.clean_old_history",
             "kwargs": json.dumps({"days_to_keep": 90})  # Keep 3 months history
+        }
+    )
+
+    schedule_5, _ = IntervalSchedule.objects.get_or_create(
+        every=1, period=IntervalSchedule.HOURS
+    )
+    PeriodicTask.objects.update_or_create(
+        name="Update hardware service Status",
+        defaults={
+            "interval": schedule_5,
+            "task": "SubSync.tasks.update_hardware_service_statuses",
+            "args": json.dumps([]),
+            "kwargs": json.dumps({})
         }
     )
     

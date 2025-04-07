@@ -202,33 +202,33 @@ class ServerSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("This server name is already in use.")
         return value
 
-class SubscriptionDetailSerializer(serializers.ModelSerializer):
-    # provider = serializers.PrimaryKeyRelatedField(queryset=Provider.objects.all())
-    provider = ProviderSerializer(read_only=True)
-    software_detail = SoftwareSubscriptionSerializer(read_only=True)
-    billing = UtilitySerializer(read_only=True)
-    domain = DomainSerializer(read_only=True)
-    server = ServerSerializer(read_only=True)
+# class SubscriptionDetailSerializer(serializers.ModelSerializer):
+#     # provider = serializers.PrimaryKeyRelatedField(queryset=Provider.objects.all())
+#     provider = ProviderSerializer(read_only=True)
+#     software_detail = SoftwareSubscriptionSerializer(read_only=True)
+#     billing = UtilitySerializer(read_only=True)
+#     domain = DomainSerializer(read_only=True)
+#     server = ServerSerializer(read_only=True)
 
-    class Meta:
-        model = Subscription
-        fields = [
-            "id",
-            "subscription_category",
-            "provider",
-            "start_date",
-            "end_date",
-            "billing_cycle",
-            "cost",
-            "payment_status",
-            "next_payment_date",
-            "status",
-            "auto_renewal",
-            "software_detail",
-            "billing",
-            "domain",
-            "server",
-        ]
+#     class Meta:
+#         model = Subscription
+#         fields = [
+#             "id",
+#             "subscription_category",
+#             "provider",
+#             "start_date",
+#             # "end_date",
+#             "billing_cycle",
+#             "cost",
+#             "payment_status",
+#             "next_payment_date",
+#             "status",
+#             "auto_renewal",
+#             "software_detail",
+#             "billing",
+#             "domain",
+#             "server",
+#         ]
 class SubscriptionDetailSerializer(serializers.ModelSerializer):
     providerid = serializers.IntegerField(source="provider.id", read_only=True)
     providerName = serializers.CharField(source="provider.provider_name", read_only=True)
@@ -279,7 +279,7 @@ class SubscriptionDetailSerializer(serializers.ModelSerializer):
             "websiteLink",
             
             "start_date",
-            "end_date",
+            # "end_date",
             "billing_cycle",
             "cost",
             "payment_status",
@@ -343,12 +343,12 @@ class SubscriptionUpdateSerializer(serializers.ModelSerializer):
     no_of_users = serializers.IntegerField(source="software_detail.no_of_users", required=False, allow_null=True,default=None,)
     
     # Billing Details
-    consumer_no = serializers.IntegerField(source="billing.consumer_no", required=False)
+    consumer_no = serializers.IntegerField(source="billing.consumer_no",required=False,allow_null=True,default=None)
     utility_name = serializers.CharField(source="billing.utility_name", required=False)
     
     # Domain Details
     domain_name = serializers.CharField(source="domain.domain_name", required=False)
-    ssl_certification = serializers.BooleanField(source="domain.ssl_certification", required=False)
+    ssl_certification = serializers.BooleanField(source="domain.ssl_certification", required=False,allow_null=True,default=None)
     
     # Server Details
     server_name = serializers.CharField(source="server.server_name", required=False)
@@ -361,7 +361,7 @@ class SubscriptionUpdateSerializer(serializers.ModelSerializer):
         model = Subscription
         fields = [
             # Subscription fields
-            "subscription_category", "start_date", "end_date", "billing_cycle",
+            "subscription_category", "start_date",  "billing_cycle",
             "cost", "payment_status", "next_payment_date","last_payment_date", "status", "auto_renewal",
             
             # Software fields
@@ -378,7 +378,7 @@ class SubscriptionUpdateSerializer(serializers.ModelSerializer):
         ]
         extra_kwargs = {
             'start_date': {'required': False},
-            'end_date': {'required': False, 'allow_null': True},
+            # 'end_date': {'required': False, 'allow_null': True},
             'billing_cycle': {'required': False},
             'cost': {'required': False, 'min_value': 0},
             'payment_status': {'required': False},
@@ -488,7 +488,7 @@ class SubscriptionWarningSerializer(serializers.ModelSerializer):
         model = Subscription
         fields = [
             "id", "subscription_category", "providerid", "providerName", "providerContact", "providerEmail",
-            "websiteLink", "start_date", "end_date", "billing_cycle", "cost", "payment_status", "next_payment_date",
+            "websiteLink", "start_date", "billing_cycle", "cost", "payment_status", "next_payment_date",
             "status", "auto_renewal", "software_id", "software_no_of_users","software_name","software_version", "server_id", "server_type",
             "server_capacity","server_name", "billingid", "consumer_no", "utility_type","utility_name","domain_id",
             "domain_name","ssl_certification","ssl_expiry_date","whois_protection","domain_type","name_servers","hosting_provider",
@@ -695,7 +695,9 @@ class HardwareSerializer(serializers.ModelSerializer):
     
     def validate_serial_number(self, value):
         """Ensure serial number is unique and follows format."""
-        if Hardware.objects.filter(serial_number=value).exists():
+        # If instance exists, exclude it from uniqueness check
+        instance = getattr(self, 'instance', None)
+        if Hardware.objects.filter(serial_number=value).exclude(id=instance.id if instance else None).exists():
             raise serializers.ValidationError("Serial number already exists.")
         return value
     def validate_purchase(self, value):
@@ -730,6 +732,80 @@ class HardwareSerializer(serializers.ModelSerializer):
                 if service["last_service_date"] > service["next_service_date"]:
                     raise serializers.ValidationError("Next service date must be after last service date.")
         return value
+    
+    def update(self, instance, validated_data):
+        # Extract nested data
+        purchase_data = validated_data.pop('purchase', None)
+        warranty_data = validated_data.pop('warranty', None)
+        services_data = validated_data.pop('services', None)
+        
+        # Hardware type specific data
+        computer_data = validated_data.pop('computer', None)
+        portable_device_data = validated_data.pop('portable_device', None)
+        network_device_data = validated_data.pop('network_device', None)
+        air_conditioner_data = validated_data.pop('air_conditioner', None)
+        printer_data = validated_data.pop('printer', None)
+        scanner_data = validated_data.pop('scanner', None)
+
+        try:
+            with transaction.atomic():
+                # Update main Hardware instance
+                for attr, value in validated_data.items():
+                    setattr(instance, attr, value)
+                instance.save()
+
+                # Update or create related models
+                if purchase_data and hasattr(instance, 'purchase'):
+                    self._update_related_model(instance.purchase, purchase_data)
+                
+                if warranty_data and hasattr(instance, 'warranty'):
+                    self._update_related_model(instance.warranty, warranty_data)
+                
+                if services_data is not None and hasattr(instance, 'services'):
+                    self._update_services(instance, services_data)
+
+                # Update hardware type specific models
+                if computer_data and hasattr(instance, 'computer'):
+                    self._update_related_model(instance.computer, computer_data)
+                
+                if portable_device_data and hasattr(instance, 'portable_device'):
+                    self._update_related_model(instance.portable_device, portable_device_data)
+                
+                if network_device_data and hasattr(instance, 'network_device'):
+                    self._update_related_model(instance.network_device, network_device_data)
+                
+                if air_conditioner_data and hasattr(instance, 'air_conditioner'):
+                    self._update_related_model(instance.air_conditioner, air_conditioner_data)
+                
+                if printer_data and hasattr(instance, 'printer'):
+                    self._update_related_model(instance.printer, printer_data)
+                
+                if scanner_data and hasattr(instance, 'scanner'):
+                    self._update_related_model(instance.scanner, scanner_data)
+
+                return instance
+
+        except Exception as e:
+            logger.error(f"Error updating hardware: {str(e)}")
+            raise serializers.ValidationError({"message": "Failed to update hardware."})
+
+    def _update_related_model(self, model_instance, data):
+        """Helper to update a single related model instance"""
+        if model_instance is None:
+            return
+            
+        for attr, value in data.items():
+            if value is not None:  # Only update non-null values
+                setattr(model_instance, attr, value)
+        model_instance.save()
+
+    def _update_services(self, hardware_instance, services_data):
+        """Special handling for services as it's a many-to-many relationship"""
+        # Clear existing services if new ones are provided
+        if services_data:
+            hardware_instance.services.all().delete()
+            for service_data in services_data:
+                HardwareService.objects.create(hardware=hardware_instance, **service_data)
     
 # class HardwareSerializer(serializers.ModelSerializer):
 #     warranty = WarrantySerializer(required=False)

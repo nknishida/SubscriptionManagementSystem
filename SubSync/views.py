@@ -382,8 +382,8 @@ class SubscriptionCountView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        active_count = Subscription.objects.filter(end_date__gte=now()).count()
-        expired_count = Subscription.objects.filter(end_date__lt=now()).count()
+        active_count = Subscription.objects.filter(next_payement_date__gte=now()).count()
+        expired_count = Subscription.objects.filter(next_payement_date__lt=now()).count()
 
         return Response({
             "total_active_subscriptions": active_count,
@@ -2285,7 +2285,9 @@ class DashboardOverviewAll(APIView):
         # warranty_expiring = Hardware.objects.filter(is_deleted=False, warranty__warranty_expiry_date__lte=now() + timedelta(days=30)).count()
         warranty_expiring = Hardware.objects.filter(is_deleted=False,warranty__status="Expiring Soon").count()
         # maintenance_due = Hardware.objects.filter(status="maintenance_due", is_deleted=False).count()
-        maintenance_due = Hardware.objects.filter(is_deleted=False,services__next_service_date__range=[today, today + timedelta(days=7)]).distinct().count()
+        # maintenance_due = Hardware.objects.filter(is_deleted=False,services__next_service_date__range=[today, today + timedelta(days=7)]).distinct().count()
+        maintenance_due = Hardware.objects.filter(is_deleted=False,services__status__in='Maintenance Soon').distinct().count()
+        print(maintenance_due)
         # out_of_warranty = Hardware.objects.filter(is_deleted=False, warranty__warranty_expiry_date__lte=now()).count()
 
         # Total Warnings Count

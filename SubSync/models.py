@@ -70,7 +70,7 @@ class Subscription(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='subscriber')
     provider = models.ForeignKey(Provider, on_delete=models.CASCADE, related_name='subscription_provider')
     start_date = models.DateField()
-    end_date = models.DateField(null=True, blank=True)
+    # end_date = models.DateField(null=True, blank=True)
     billing_cycle = models.CharField(max_length=20)
     cost = models.DecimalField(max_digits=10, decimal_places=2)
     payment_method = models.CharField(max_length=50)
@@ -110,9 +110,9 @@ class Subscription(models.Model):
         self.deleted_by=None
         self.save(update_fields=['is_deleted', 'deleted_at','deleted_by'])
 
-    def clean(self):
-        if self.end_date and self.start_date and self.end_date < self.start_date:
-            raise ValidationError("End date cannot be earlier than the start date.")
+    # def clean(self):
+        # if self.end_date and self.start_date and self.end_date < self.start_date:
+        #     raise ValidationError("End date cannot be earlier than the start date.")
         
     def update_status(self):
         """Update the subscription status based on !end date//next_payement_date and auto-renewal."""
@@ -120,12 +120,14 @@ class Subscription(models.Model):
 
         if self.is_deleted:
             self.status = "Canceled"
-        elif self.end_date and today > self.end_date:
-            self.status = "Inactive"
+        # elif self.end_date and today > self.end_date:
+        #     self.status = "Inactive"
         elif self.next_payment_date:
             if today > self.next_payment_date:
                 if self.auto_renewal:
                     self.status = "Active"
+                    # self.last_payment_date = self.next_payment_date or today
+                    # self.calculate_next_payment_date()
                 else:
                     self.status = "Expired"
             else:
@@ -168,8 +170,8 @@ class Subscription(models.Model):
             # If next_payment_date exists, calculate from that
             self.next_payment_date = self.next_payment_date + cycle_delta
         
-        if self.end_date and self.next_payment_date > self.end_date:
-            self.next_payment_date = self.end_date
+        # if self.end_date and self.next_payment_date > self.end_date:
+        #     self.next_payment_date = self.end_date
 
         print(f"Next Payment Date: {self.next_payment_date}")
         return self.next_payment_date
@@ -444,15 +446,41 @@ class Purchase(models.Model):
         return f"Purchase for {self.hardware} on {self.purchase_date}"
 
 class HardwareService(models.Model):
+    SERVICE_STATUS_CHOICES = [
+        ('Active', 'Active'),
+        ('Maintenance Soon', 'Maintenance Soon'),
+        ('Maintenance Due', 'Maintenance Due'),
+        # ('Expired', 'Expired'),
+    ]
     hardware = models.ForeignKey(Hardware, on_delete=models.CASCADE, related_name='services')
     last_service_date = models.DateField(null=True, blank=True)
     next_service_date = models.DateField(null=True, blank=True)
     free_service_until = models.DateField(null=True, blank=True)
     service_cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     service_provider = models.CharField(max_length=100, null=True, blank=True)
-    # service_notes = models.TextField(null=True, blank=True)
+    status = models.CharField(
+        max_length=20, 
+        choices=SERVICE_STATUS_CHOICES, 
+        default='Active',
+        help_text="Status of the service contract"
+    )
 
     history = HistoricalRecords()
+
+    def save(self, *args, **kwargs):
+        today = timezone.now().date()
+        
+        # Update status based on dates
+        if self.next_service_date:
+            if self.next_service_date <= today:
+                self.status = 'Maintenance Due'
+            elif self.next_service_date <= today + timedelta(days=7):
+                self.status = 'Maintenance Soon'
+            else:
+                self.status = 'Active'
+        
+        super().save(*args, **kwargs)
+
 
     def __str__(self):
         return f"Service for {self.hardware} on {self.last_service_date}"

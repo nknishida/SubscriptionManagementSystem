@@ -447,37 +447,49 @@ def update_subscriptions_status():
     for subscription in subscriptions:
         original_status = subscription.status
         original_payment_status = subscription.payment_status
+        original_last_payment = subscription.last_payment_date
+        original_next_payment = subscription.next_payment_date
 
         logger.info(
-            f"Checking subscription {subscription.id}: end_date={subscription.end_date}, "
+            f"Checking subscription {subscription.id} ,"
+            # end_date={subscription.end_date}, "
             f"next_payment_date={subscription.next_payment_date}, today={today}"
         )
         # Check if the end date has passed
-        if subscription.end_date and today > subscription.end_date:
-            logger.info(f"Updating subscription {subscription.id} to Inactive")
-            subscription.status = "Inactive"
-            subscription.payment_status = "Unpaid"
+        # if subscription.end_date and today > subscription.end_date:
+        #     logger.info(f"Updating subscription {subscription.id} to Inactive")
+        #     subscription.status = "Inactive"
+        #     subscription.payment_status = "Unpaid"
         
-        else:
-            if subscription.next_payment_date:
-                if today > subscription.next_payment_date:
-                    if subscription.auto_renewal:
-                        subscription.status = "Active"
-                        subscription.payment_status = "Paid"
-                        logger.info(f"Subscription {subscription.id}: Auto-renewal is enabled, keeping Active")
-                    else:
-                        subscription.status = "Expired"
-                        logger.info(f"Subscription {subscription.id}: Auto-renewal is disabled, marking as Expired")
-                        subscription.payment_status = "Unpaid"
-                else:
+        
+        if subscription.next_payment_date:
+            if today > subscription.next_payment_date:
+                if subscription.auto_renewal:
+                    subscription.status = "Active"
                     subscription.payment_status = "Paid"
-                    subscription.status = "Active" 
+                    # Set last payment date to today or next_payment_date
+                    subscription.last_payment_date = subscription.next_payment_date or today
+
+                    # Recalculate the next payment date
+                    subscription.calculate_next_payment_date()
+                    logger.info(
+                        f"Subscription {subscription.id}: Auto-renewed - "
+                        f"last_payment_date set to {subscription.last_payment_date}, "
+                        f"next_payment_date set to {subscription.next_payment_date}"
+                    )
+                else:
+                    subscription.status = "Expired"
+                    logger.info(f"Subscription {subscription.id}: Auto-renewal is disabled, marking as Expired")
+                    subscription.payment_status = "Unpaid"
+            else:
+                subscription.payment_status = "Paid"
+                subscription.status = "Active" 
 
         # subscription.save(update_fields=['status', 'payment_status'])
         # logger.info(f"Subscription {subscription.id} updated: status={subscription.status}, payment_status={subscription.payment_status}")
 
         # Add only if status or payment_status changed
-        if subscription.status != original_status or subscription.payment_status != original_payment_status:
+        if (subscription.status != original_status or subscription.payment_status != original_payment_status or subscription.last_payment_date != original_last_payment or subscription.next_payment_date != original_next_payment):
             logger.info(
                 f"Subscription {subscription.id} updated: "
                 f"status={original_status} -> {subscription.status}, "
@@ -489,7 +501,7 @@ def update_subscriptions_status():
     if to_update:
         logger.info(f"Updating {len(to_update)} subscriptions in bulk...")
         with transaction.atomic():
-            Subscription.objects.bulk_update(to_update, ["status", "payment_status"])
+            Subscription.objects.bulk_update(to_update, ["status", "payment_status", "last_payment_date", "next_payment_date"])
         logger.info("Bulk update successful.")
     else:
         logger.info("No subscriptions needed updating.")
@@ -565,3 +577,65 @@ def clean_old_history(days_to_keep=90):
     
     # Delete in chunks
     Subscription.history.filter(history_date__lt=cutoff).delete()
+
+from celery import shared_task
+from django.utils import timezone
+from datetime import timedelta
+from .models import HardwareService
+import logging
+
+logger = logging.getLogger(__name__)
+
+@shared_task
+def update_hardware_service_statuses():
+    """
+    Periodic task to update status of all hardware services based on their dates
+    """
+    today = timezone.now().date()
+    soon_threshold = today + timedelta(days=7)
+    
+    try:
+        # Get all services that might need status updates
+        services = HardwareService.objects.all()
+        
+        updated_counts = {
+            'to_active': 0,
+            'to_maintenance_soon': 0,
+            'to_maintenance_due': 0,
+            'unchanged': 0
+        }
+        
+        for service in services:
+            original_status = service.status
+            
+            # Determine new status
+            if service.next_service_date:
+                if service.next_service_date <= today:
+                    new_status = 'Maintenance Due'
+                elif service.next_service_date <= soon_threshold:
+                    new_status = 'Maintenance Soon'
+                else:
+                    new_status = 'Active'
+            else:
+                new_status = 'Active'
+            
+            # Only update if status changed
+            if new_status != original_status:
+                service.status = new_status
+                service.save()
+                updated_counts[f'to_{new_status.lower().replace(" ", "_")}'] += 1
+            else:
+                updated_counts['unchanged'] += 1
+        
+        logger.info(
+            f"Hardware service status update completed. "
+            f"Updated to Active: {updated_counts['to_active']}, "
+            f"Updated to Maintenance Soon: {updated_counts['to_maintenance_soon']}, "
+            f"Updated to Maintenance Due: {updated_counts['to_maintenance_due']}, "
+            f"Unchanged: {updated_counts['unchanged']}"
+        )
+        return updated_counts
+        
+    except Exception as e:
+        logger.error(f"Error updating hardware service statuses: {str(e)}")
+        raise
