@@ -993,7 +993,7 @@ class ResourceAddSerializer(serializers.ModelSerializer):
         return sum(self._convert_to_gb(resource.storage_capacity) for resource in server.server_resources.all())
     
 class ResourceViewSerializer(serializers.ModelSerializer):
-    customer_resources = CustomerBasicSerializer(read_only=True)
+    customer = CustomerBasicSerializer(read_only=True)
     server = ServerSerializer(read_only=True)
     
     class Meta:
@@ -1124,7 +1124,7 @@ class CustomerSerializer(serializers.ModelSerializer):
     paymentMethod = serializers.CharField(source='payment_method')
     cost = serializers.DecimalField(max_digits=10, decimal_places=2)
     resource_id = serializers.IntegerField(write_only=True, required=False)
-    resource = ResourceBasicSerializer(read_only=True)
+    resources = ResourceBasicSerializer(many=True,read_only=True)
     # resourceid = serializers.IntegerField(source='resource.id', read_only=True)
     # resource_name = serializers.CharField(source='resource.resource_name', read_only=True)
     # resource_type = serializers.CharField(source='resource.resource_type', read_only=True)
@@ -1146,7 +1146,7 @@ class CustomerSerializer(serializers.ModelSerializer):
         model = Customer
         fields = [
             'id', 'customer_name', 'customer_phone', 'customer_email', 'status', "deleted_at","deleted_by_username",
-            'paymentMethod', 'startDate', 'endDate', 'billingCycle', 'cost', 'user','resource_id','resource'
+            'paymentMethod', 'startDate', 'endDate', 'billingCycle', 'cost', 'user','resource_id','resources'
              # Resource fields
             # 'resourceid', 'resource_name', 'resource_type', 'resource_status',
             # 'resource_billing_cycle', 'resource_cost', 'storage_capacity',
@@ -1166,18 +1166,19 @@ class CustomerSerializer(serializers.ModelSerializer):
         if resource_id:
             try:
                 resource = Resource.objects.get(id=resource_id)
-                if hasattr(resource, 'customer_resources'):
+                if resource.customer is not None:
                     raise serializers.ValidationError(
                         {"resource_id": "This resource is already assigned to another customer"}
                     )
-                customer.resource = resource
-                customer.save()
+                # Assign the resource to the customer
+                resource.customer = customer
+                resource.save()
+                print(f"🔗 Assigned resource: {resource} to customer: {customer.id}")
             except Resource.DoesNotExist:
                 raise serializers.ValidationError(
                     {"resource_id": "Invalid resource ID"}
                 )
-            print(f"🔗 Assigning resource: {resource} to customer: {customer.id}")
-
+            
         return customer
     
 # class ServerUsageSerializer(serializers.ModelSerializer):

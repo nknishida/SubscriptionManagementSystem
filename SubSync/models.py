@@ -781,6 +781,106 @@ class ReminderCustomer(models.Model):
     reminder = models.ForeignKey(Reminder, on_delete=models.CASCADE, related_name='customer_reminder')
     customer = models.ForeignKey('Customer', on_delete=models.CASCADE)
 
+class Customer(models.Model):
+    # STATUS_CHOICES = [
+    #     ('active', 'Active'),
+    #     ('inactive', 'Inactive'),
+    #     # ('pending', 'Pending')
+    # ]
+    STATUS_CHOICES = ['Active', 'Inactive']
+
+    # CUSTOMER_TYPE_CHOICES = [
+    #     ('Inhouse', 'Inhouse'),
+    #     ('External', 'External'),
+    # ]
+    
+    customer_name = models.CharField(max_length=100)
+    contact_phone = models.CharField(max_length=20)
+    email = models.EmailField()
+    status = models.CharField(max_length=20, choices=[(s, s) for s in STATUS_CHOICES])
+    # customer_type = models.CharField(max_length=50)
+    payment_method= models.CharField(max_length=20)
+    last_payment_date = models.DateField(null=True, blank=True)
+    start_date = models.DateField()
+    end_date = models.DateField()
+    billing_cycle = models.CharField(max_length=20)
+    cost= models.DecimalField(max_digits=10, decimal_places=2)
+    next_payment_date = models.DateField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    is_deleted = models.BooleanField(default=False)  # Soft delete flag
+    deleted_at = models.DateTimeField(null=True, blank=True)  # Store delete time
+    deleted_by= models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='deleted_customer')
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='customers')
+    # resource = models.OneToOneField(Resource, on_delete=models.SET_NULL, related_name='customer_resources', null=True, blank=True)
+
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return self.customer_name
+    
+    def soft_delete(self,deleted_by=None):
+        """Soft delete: Hide subscription without affecting status."""
+        self.is_deleted = True
+        self.deleted_at = now()
+        self.deleted_by=deleted_by
+        self.save(update_fields=['is_deleted', 'deleted_at','deleted_by'])
+
+    def restore(self):
+        """Restore subscription from soft delete."""
+        self.is_deleted = False
+        self.deleted_at = None
+        self.deleted_by=None
+        self.save(update_fields=['is_deleted', 'deleted_at','deleted_by'])
+
+    def calculate_next_payment_date(self,force_update=False):
+        """Calculate the next payment date based on !provisioned_date //last_payment_date and billing_cycle."""
+        if not self.provisioned_date:
+            print("provisioned date not set")
+            return None
+
+        cycle_mapping = {
+            'weekly': relativedelta(weeks=1),
+            'monthly': relativedelta(months=1),
+            'quarterly': relativedelta(months=3),
+            'semi-annual': relativedelta(months=6),
+            'annual': relativedelta(years=1),
+            'biennial': relativedelta(years=2),
+            'triennial': relativedelta(years=3),
+        }
+
+        # last_payement_date = self.start_date?
+        # next_payment_date = self.end_date?
+        cycle_delta = cycle_mapping.get(self.billing_cycle, relativedelta())
+
+        # If next_payment_date is not set, calculate it from !start_date//last_payment_date
+        if force_update or not self.next_payment_date:
+            base_date = self.last_payment_date or self.provisioned_date
+            self.next_payment_date = base_date + cycle_delta
+            print(f"1 Next Payment Date: {self.next_payment_date}")
+        else:
+            # If next_payment_date is set, calculate the next payment date based on the billing cycle
+            self.next_payment_date = self.next_payment_date + cycle_delta
+            print(f"2 Next Payment Date: {self.next_payment_date}")
+
+        print(f"3 Next Payment Date: {self.next_payment_date}")
+        return self.next_payment_date
+    
+    def save(self, *args, **kwargs):
+        now = timezone.now().date()
+        """Override save method to update status , payment status,and next payment date before saving."""
+        
+        if not self.next_payment_date or self.next_payment_date < now:
+            self.next_payment_date = self.calculate_next_payment_date(force_update=True)
+
+        super().save(*args, **kwargs)
+
+    class Meta:
+        db_table = 'customer'
+        ordering = ['-created_at']
+
 class Resource(models.Model):
     # RESOURCE_TYPE_CHOICES = [
     #     ('database', 'Database'),
@@ -815,7 +915,7 @@ class Resource(models.Model):
     storage_capacity = models.CharField(max_length=100, blank=True, null=True)
     provisioned_date = models.DateField(null=True, blank=True)
     next_payment_date = models.DateField(null=True, blank=True)
-    last_payement_date = models.DateField(null=True, blank=True)
+    last_payment_date = models.DateField(null=True, blank=True)
     payment_method = models.CharField(max_length=50)
 
     hosting_type = models.CharField(max_length=100, blank=True, null=True)
@@ -830,7 +930,7 @@ class Resource(models.Model):
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='user_resources')
     server = models.ForeignKey(Servers, on_delete=models.CASCADE, related_name='server_resources')
-    # customer = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True, blank=True, related_name='resources')
+    customer = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True, blank=True, related_name='resources')
 
     history = HistoricalRecords()
 
@@ -870,7 +970,7 @@ class Resource(models.Model):
 
         # If next_payment_date is not set, calculate it from !start_date//last_payment_date
         if force_update or not self.next_payment_date:
-            base_date = self.last_updated_date or self.provisioned_date
+            base_date = self.last_payment_date or self.provisioned_date
             self.next_payment_date = base_date + cycle_delta
             print(f"1 Next Payment Date: {self.next_payment_date}")
         else:
@@ -892,65 +992,7 @@ class Resource(models.Model):
 
     def __str__(self):
         return self.resource_name
-
-class Customer(models.Model):
-    # STATUS_CHOICES = [
-    #     ('active', 'Active'),
-    #     ('inactive', 'Inactive'),
-    #     # ('pending', 'Pending')
-    # ]
-    STATUS_CHOICES = ['Active', 'Inactive']
-
-    # CUSTOMER_TYPE_CHOICES = [
-    #     ('Inhouse', 'Inhouse'),
-    #     ('External', 'External'),
-    # ]
     
-    customer_name = models.CharField(max_length=100)
-    contact_phone = models.CharField(max_length=20)
-    email = models.EmailField()
-    status = models.CharField(max_length=20, choices=[(s, s) for s in STATUS_CHOICES])
-    # customer_type = models.CharField(max_length=50)
-    payment_method= models.CharField(max_length=20)
-    last_payment_date = models.DateField(null=True, blank=True)
-    start_date = models.DateField()
-    end_date = models.DateField()
-    billing_cycle = models.CharField(max_length=20)
-    cost= models.DecimalField(max_digits=10, decimal_places=2)
-    #next_payment_date = models.DateField(null=True, blank=True)
-
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    is_deleted = models.BooleanField(default=False)  # Soft delete flag
-    deleted_at = models.DateTimeField(null=True, blank=True)  # Store delete time
-    deleted_by= models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='deleted_customer')
-
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='customers')
-    resource = models.OneToOneField(Resource, on_delete=models.SET_NULL, related_name='customer_resources', null=True, blank=True)
-
-    history = HistoricalRecords()
-
-    def __str__(self):
-        return self.customer_name
-    
-    def soft_delete(self,deleted_by=None):
-        """Soft delete: Hide subscription without affecting status."""
-        self.is_deleted = True
-        self.deleted_at = now()
-        self.deleted_by=deleted_by
-        self.save(update_fields=['is_deleted', 'deleted_at','deleted_by'])
-
-    def restore(self):
-        """Restore subscription from soft delete."""
-        self.is_deleted = False
-        self.deleted_at = None
-        self.deleted_by=None
-        self.save(update_fields=['is_deleted', 'deleted_at','deleted_by'])
-
-    class Meta:
-        db_table = 'customer'
-        ordering = ['-created_at']
-
 # class CustomerResource(models.Model):
 #     PAYMENT_STATUS_CHOICES = [
 #         ('paid', 'Paid'),

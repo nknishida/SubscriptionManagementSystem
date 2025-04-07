@@ -2483,8 +2483,7 @@ class ServerUsageView(APIView):
 # ✅ API to List All Customers
 class CustomerListView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
-    # queryset = Customer.objects.prefetch_related('resources').all() 
-    queryset = Customer.objects.prefetch_related('resource').filter(is_deleted=False)
+    queryset = Customer.objects.prefetch_related('resources').filter(is_deleted=False)
     serializer_class = CustomerSerializer
 
 # ✅ API to Retrieve, Update, or Delete a Customer
@@ -2765,7 +2764,7 @@ class ServerReportAPIView(APIView):
                         # "provisioned_date": resource.provisioned_date,
                         "provisioned_date": resource.provisioned_date.strftime("%Y-%m-%d") if resource.provisioned_date else None,
                         # "last_updated_date": resource.last_updated_date,
-                        "last_updated_date": resource.last_updated_date.strftime("%Y-%m-%d") if resource.last_updated_date else None,
+                        "last_payement_date": resource.last_payment_date.strftime("%Y-%m-%d") if resource.last_payment_date else None,
                         "status": resource.status,
                         "hosting_type": resource.hosting_type,
                         # "hosting_location": resource.hosting_location
