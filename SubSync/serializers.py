@@ -770,26 +770,50 @@ class HardwareSerializer(serializers.ModelSerializer):
                     self._update_related_model(instance.warranty, warranty_data)
                 
                 if services_data is not None and hasattr(instance, 'services'):
-                    self._update_services(instance, services_data)
+                    self._update_related_model(instance, services_data)
 
                 # Update hardware type specific models
-                if computer_data and hasattr(instance, 'computer'):
-                    self._update_related_model(instance.computer, computer_data)
+                if instance.hardware_type == 'Laptop' or instance.hardware_type == 'Desktop':
+                    if computer_data is not None:
+                        if hasattr(instance, 'computer'):
+                            self._update_related_model(instance.computer, computer_data)
+                        else:
+                            Computer.objects.create(hardware=instance, **computer_data)
                 
-                if portable_device_data and hasattr(instance, 'portable_device'):
-                    self._update_related_model(instance.portable_device, portable_device_data)
+                elif instance.hardware_type == 'Mobile Phone' or instance.hardware_type == 'Tablet':
+                    if portable_device_data is not None:
+                        if hasattr(instance, 'portable_device'):
+                            self._update_related_model(instance.portable_device, portable_device_data)
+                        else:
+                            PortableDevice.objects.create(hardware=instance, **portable_device_data)
                 
-                if network_device_data and hasattr(instance, 'network_device'):
-                    self._update_related_model(instance.network_device, network_device_data)
+                elif instance.hardware_type == 'Network Device':
+                    if network_device_data is not None:
+                        if hasattr(instance, 'network_device'):
+                            self._update_related_model(instance.network_device, network_device_data)
+                        else:
+                            NetworkDevice.objects.create(hardware=instance, **network_device_data)
                 
-                if air_conditioner_data and hasattr(instance, 'air_conditioner'):
-                    self._update_related_model(instance.air_conditioner, air_conditioner_data)
+                elif instance.hardware_type == 'Air Conditioner':
+                    if air_conditioner_data is not None:
+                        if hasattr(instance, 'air_conditioner'):
+                            self._update_related_model(instance.air_conditioner, air_conditioner_data)
+                        else:
+                            AirConditioner.objects.create(hardware=instance, **air_conditioner_data)
                 
-                if printer_data and hasattr(instance, 'printer'):
-                    self._update_related_model(instance.printer, printer_data)
+                elif instance.hardware_type == 'Printer':
+                    if printer_data is not None:
+                        if hasattr(instance, 'printer'):
+                            self._update_related_model(instance.printer, printer_data)
+                        else:
+                            Printer.objects.create(hardware=instance, **printer_data)
                 
-                if scanner_data and hasattr(instance, 'scanner'):
-                    self._update_related_model(instance.scanner, scanner_data)
+                elif instance.hardware_type == 'Scanner':
+                    if scanner_data is not None:
+                        if hasattr(instance, 'scanner'):
+                            self._update_related_model(instance.scanner, scanner_data)
+                        else:
+                            Scanner.objects.create(hardware=instance, **scanner_data)
 
                 return instance
 
@@ -807,13 +831,13 @@ class HardwareSerializer(serializers.ModelSerializer):
                 setattr(model_instance, attr, value)
         model_instance.save()
 
-    def _update_services(self, hardware_instance, services_data):
-        """Special handling for services as it's a many-to-many relationship"""
-        # Clear existing services if new ones are provided
-        if services_data:
-            hardware_instance.services.all().delete()
-            for service_data in services_data:
-                HardwareService.objects.create(hardware=hardware_instance, **service_data)
+    # def _update_services(self, hardware_instance, services_data):
+    #     """Special handling for services as it's a many-to-many relationship"""
+    #     # Clear existing services if new ones are provided
+    #     if services_data:
+    #         hardware_instance.services.all().delete()
+    #         for service_data in services_data:
+    #             HardwareService.objects.create(hardware=hardware_instance, **service_data)
     
 # class HardwareSerializer(serializers.ModelSerializer):
 #     warranty = WarrantySerializer(required=False)
@@ -1045,6 +1069,7 @@ class ResourceAddSerializer(serializers.ModelSerializer):
             "resource_name": "resource_name",
             "resource_type": "resource_type",
             "storage_capacity": "storage_capacity",
+             "paymentMethod":"payment_method"
             # "hosting_location_name": "hosting_location_name",
             # "user": "user"
         }
