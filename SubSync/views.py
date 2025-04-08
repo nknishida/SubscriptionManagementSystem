@@ -1217,6 +1217,15 @@ class SubscriptionDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
         instance.soft_delete(deleted_by=self.request.user)
 
     def patch(self, request, *args, **kwargs):
+        if 'providerName' in request.data:
+            try:
+                provider = Provider.objects.get(provider_name=request.data['providerName'])
+                request.data['provider_id'] = provider.id
+            except Provider.DoesNotExist:
+                return Response(
+                    {"error": "Provider not found"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
         logger.debug(f"Received PATCH request with data: {request.data}")
         try:
             response = self.partial_update(request, *args, **kwargs)
@@ -2602,9 +2611,9 @@ class ResourceDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
         return Response(
             {
                 "message": "Resource deleted successfully!",
-                "status": status.HTTP_204_NO_CONTENT
+                "status": status.HTTP_200_OK
             },
-            status=status.HTTP_204_NO_CONTENT
+            status=status.HTTP_200_OK
         )
 
 from rest_framework_simplejwt.views import TokenRefreshView

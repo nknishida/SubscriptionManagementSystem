@@ -183,8 +183,10 @@ class Subscription(models.Model):
         
         if self.pk:  # Only for existing instances
             original = Subscription.objects.get(pk=self.pk)
+            if original.billing_cycle != self.billing_cycle:
+                self.next_payment_date = self.calculate_next_payment_date()
             # If last_payment_date changed, recalculate next_payment_date
-            if original.last_payment_date != self.last_payment_date:
+            elif original.last_payment_date != self.last_payment_date:
                 self.next_payment_date = self.calculate_next_payment_date()
         else:
             # New object: first-time calculation

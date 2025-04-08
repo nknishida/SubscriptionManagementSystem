@@ -348,7 +348,12 @@ class SubscriptionUpdateSerializer(serializers.ModelSerializer):
     
     # Domain Details
     domain_name = serializers.CharField(source="domain.domain_name", required=False)
+    domain_type = serializers.CharField(source="domain.domain_type", required=False,allow_null=True,allow_blank=True,default=None)
     ssl_certification = serializers.BooleanField(source="domain.ssl_certification", required=False,allow_null=True,default=None)
+    ssl_expiry_date = serializers.DateField(source="domain.ssl_expiry_date", required=False,allow_null=True,default=None)
+    whois_protection = serializers.BooleanField(source="domain.whois_protection", required=False,allow_null=True,default=None)
+    name_servers = serializers.CharField(source="domain.name_servers", required=False,allow_null=True,allow_blank=True,default=None)
+    hosting_provider = serializers.CharField(source="domain.hosting_provider", required=False,allow_null=True,allow_blank=True,default=None)
     
     # Server Details
     server_name = serializers.CharField(source="server.server_name", required=False)
@@ -356,6 +361,8 @@ class SubscriptionUpdateSerializer(serializers.ModelSerializer):
     server_capacity = serializers.CharField(source="server.server_capacity", required=False,allow_null=True,allow_blank=True)
 
     last_payment_date = serializers.DateField(required=False, allow_null=True)
+    provider_name = serializers.CharField(source="provider.name",read_only=True)
+    provider_id = serializers.PrimaryKeyRelatedField(queryset=Provider.objects.all(),source="provider",required=False,allow_null=True)
 
     class Meta:
         model = Subscription
@@ -371,10 +378,11 @@ class SubscriptionUpdateSerializer(serializers.ModelSerializer):
             "consumer_no", "utility_name",
             
             # Domain fields
-            "domain_name", "ssl_certification",
+            "domain_name", "ssl_certification","ssl_expiry_date","whois_protection","domain_type","hosting_provider","name_servers",
             
             # Server fields
-            "server_name","name_servers","server_capacity"
+            "server_name","name_servers","server_capacity",
+            "provider_name" , "provider_id"
         ]
         extra_kwargs = {
             'start_date': {'required': False},
