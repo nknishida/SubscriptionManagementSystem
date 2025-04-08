@@ -1952,12 +1952,12 @@ from .models import Hardware
 from .serializers import HardwareSerializer
 
 class RetrieveUpdateDestroyHardwareView(generics.RetrieveUpdateDestroyAPIView):
-    # queryset = Hardware.objects.all()
-    queryset = Hardware.objects.all().prefetch_related(
-        'purchase', 'warranty', 'services',
-        'computer', 'portable_device', 'network_device',
-        'air_conditioner', 'printer', 'scanner'
-    )
+    queryset = Hardware.objects.all()
+    # queryset = Hardware.objects.all().prefetch_related(
+    #     'purchase', 'warranty', 'services',
+    #     'computer', 'portable_device', 'network_device',
+    #     'air_conditioner', 'printer', 'scanner'
+    # )
     serializer_class = HardwareSerializer
     permission_classes = [IsAuthenticated]
 
