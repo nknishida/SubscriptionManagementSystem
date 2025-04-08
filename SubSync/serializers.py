@@ -609,6 +609,49 @@ class HardwareSerializer(serializers.ModelSerializer):
     # on_premise_server = HardwareServerSerializer(required=False)
     printer = PrinterSerializer(required=False)
     scanner = ScannerSerializer(required=False)
+    
+    imei_number = serializers.CharField(
+        source="portable_device.imei_number", 
+        required=False, 
+        allow_null=True, 
+        allow_blank=True
+    )
+    os_version = serializers.CharField(
+        source="portable_device.os_version", 
+        required=False, 
+        allow_null=True, 
+        allow_blank=True
+    )
+    portable_storage = serializers.CharField(
+        source="portable_device.portable_storage", 
+        required=False, 
+        allow_null=True, 
+        allow_blank=True
+    )
+    
+    # Add similar mappings for warranty and service fields
+    warranty_expiry_date = serializers.DateField(
+        source="warranty.warranty_expiry_date",
+        required=False,
+        allow_null=True
+    )
+    last_service_date = serializers.DateField(
+        source="services.last_service_date",
+        required=False,
+        allow_null=True
+    )
+    next_service_date = serializers.DateField(
+        source="services.next_service_date",
+        required=False,
+        allow_null=True
+    )
+    service_cost = serializers.DecimalField(
+        source="services.service_cost",
+        max_digits=10,
+        decimal_places=2,
+        required=False,
+        allow_null=True
+    )
 
     class Meta:
         model = Hardware
@@ -741,77 +784,143 @@ class HardwareSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError("Next service date must be after last service date.")
         return value
     
-    def update(self, instance, validated_data):
-        # Extract nested data
-        purchase_data = validated_data.pop('purchase', None)
-        warranty_data = validated_data.pop('warranty', None)
-        services_data = validated_data.pop('services', None)
+    # def update(self, instance, validated_data):
+    #     # Extract nested data
+    #     purchase_data = validated_data.pop('purchase', None)
+    #     warranty_data = validated_data.pop('warranty', None)
+    #     services_data = validated_data.pop('services', None)
         
-        # Hardware type specific data
-        computer_data = validated_data.pop('computer', None)
-        portable_device_data = validated_data.pop('portable_device', None)
-        network_device_data = validated_data.pop('network_device', None)
-        air_conditioner_data = validated_data.pop('air_conditioner', None)
-        printer_data = validated_data.pop('printer', None)
-        scanner_data = validated_data.pop('scanner', None)
+    #     # Hardware type specific data
+    #     computer_data = validated_data.pop('computer', None)
+    #     portable_device_data = validated_data.pop('portable_device', None)
+    #     network_device_data = validated_data.pop('network_device', None)
+    #     air_conditioner_data = validated_data.pop('air_conditioner', None)
+    #     printer_data = validated_data.pop('printer', None)
+    #     scanner_data = validated_data.pop('scanner', None)
+
+    #     try:
+    #         with transaction.atomic():
+    #             # Update main Hardware instance
+    #             for attr, value in validated_data.items():
+    #                 setattr(instance, attr, value)
+    #             instance.save()
+
+    #             # Update or create related models
+    #             if purchase_data and hasattr(instance, 'purchase'):
+    #                 self._update_related_model(instance.purchase, purchase_data)
+    #             # elif purchase_data:
+    #             #     Purchase.objects.create(hardware=instance, **purchase_data)
+                
+    #             if warranty_data and hasattr(instance, 'warranty'):
+    #                 self._update_related_model(instance.warranty, warranty_data)
+    #             # elif warranty_data:
+    #             #     Warranty.objects.create(hardware=instance, **warranty_data)
+                
+    #             if services_data is not None and hasattr(instance, 'services'):
+    #                 self._update_related_model(instance, services_data)
+
+    #             # Update hardware type specific models
+    #             if instance.hardware_type in ['Laptop', 'Desktop']:
+    #                 if computer_data and hasattr(instance, 'computer'):
+    #                     self._update_related_model(instance.computer, computer_data)
+    #                 elif computer_data:
+    #                     Computer.objects.create(hardware=instance, **computer_data)
+            
+    #             elif instance.hardware_type in ['Mobile Phone', 'Tablet']:
+    #                 if portable_device_data and hasattr(instance, 'portable_device'):
+    #                     self._update_related_model(instance.portable_device, portable_device_data)
+    #                 elif portable_device_data:
+    #                     PortableDevice.objects.create(hardware=instance, **portable_device_data)
+                
+    #             elif instance.hardware_type == 'Network Device':
+    #                 if network_device_data and hasattr(instance, 'network_device'):
+    #                     self._update_related_model(instance.network_device, network_device_data)
+    #                 elif network_device_data:
+    #                     NetworkDevice.objects.create(hardware=instance, **network_device_data)
+                
+    #             elif instance.hardware_type == 'Air Conditioner':
+    #                 if air_conditioner_data and hasattr(instance, 'air_conditioner'):
+    #                     self._update_related_model(instance.air_conditioner, air_conditioner_data)
+    #                 elif air_conditioner_data:
+    #                     AirConditioner.objects.create(hardware=instance, **air_conditioner_data)
+                
+    #             elif instance.hardware_type == 'Printer':
+    #                 if printer_data and hasattr(instance, 'printer'):
+    #                     self._update_related_model(instance.printer, printer_data)
+    #                 elif printer_data:
+    #                     Printer.objects.create(hardware=instance, **printer_data)
+                
+    #             elif instance.hardware_type == 'Scanner':
+    #                 if scanner_data and hasattr(instance, 'scanner'):
+    #                     self._update_related_model(instance.scanner, scanner_data)
+    #                 elif scanner_data:
+    #                     Scanner.objects.create(hardware=instance, **scanner_data)
+
+    #             return instance
+    def update(self, instance, validated_data):
+        # First handle the portable device fields
+        portable_device_data = {
+            'imei_number': validated_data.pop('imei_number', None),
+            'os_version': validated_data.pop('os_version', None),
+            'portable_storage': validated_data.pop('portable_storage', None)
+        }
+        
+        # Handle warranty fields
+        warranty_data = {
+            'warranty_expiry_date': validated_data.pop('warranty_expiry_date', None)
+        }
+        
+        # Handle service fields
+        service_data = {
+            'last_service_date': validated_data.pop('last_service_date', None),
+            'next_service_date': validated_data.pop('next_service_date', None),
+            'service_cost': validated_data.pop('service_cost', None)
+        }
 
         try:
             with transaction.atomic():
                 # Update main Hardware instance
-                for attr, value in validated_data.items():
-                    setattr(instance, attr, value)
-                instance.save()
+                instance = super().update(instance, validated_data)
 
-                # Update or create related models
-                if purchase_data and hasattr(instance, 'purchase'):
-                    self._update_related_model(instance.purchase, purchase_data)
-                # elif purchase_data:
-                #     Purchase.objects.create(hardware=instance, **purchase_data)
-                
-                if warranty_data and hasattr(instance, 'warranty'):
-                    self._update_related_model(instance.warranty, warranty_data)
-                # elif warranty_data:
-                #     Warranty.objects.create(hardware=instance, **warranty_data)
-                
-                if services_data is not None and hasattr(instance, 'services'):
-                    self._update_related_model(instance, services_data)
+                # Update portable device
+                if instance.hardware_type in ['Mobile Phone', 'Tablet']:
+                    if hasattr(instance, 'portable_device'):
+                        self._update_related_model(
+                            instance.portable_device,
+                            {k: v for k, v in portable_device_data.items() if v is not None}
+                        )
+                    else:
+                        PortableDevice.objects.create(
+                            hardware=instance,
+                            **{k: v for k, v in portable_device_data.items() if v is not None}
+                        )
 
-                # Update hardware type specific models
-                if instance.hardware_type in ['Laptop', 'Desktop']:
-                    if computer_data and hasattr(instance, 'computer'):
-                        self._update_related_model(instance.computer, computer_data)
-                    elif computer_data:
-                        Computer.objects.create(hardware=instance, **computer_data)
-            
-                elif instance.hardware_type in ['Mobile Phone', 'Tablet']:
-                    if portable_device_data and hasattr(instance, 'portable_device'):
-                        self._update_related_model(instance.portable_device, portable_device_data)
-                    elif portable_device_data:
-                        PortableDevice.objects.create(hardware=instance, **portable_device_data)
-                
-                elif instance.hardware_type == 'Network Device':
-                    if network_device_data and hasattr(instance, 'network_device'):
-                        self._update_related_model(instance.network_device, network_device_data)
-                    elif network_device_data:
-                        NetworkDevice.objects.create(hardware=instance, **network_device_data)
-                
-                elif instance.hardware_type == 'Air Conditioner':
-                    if air_conditioner_data and hasattr(instance, 'air_conditioner'):
-                        self._update_related_model(instance.air_conditioner, air_conditioner_data)
-                    elif air_conditioner_data:
-                        AirConditioner.objects.create(hardware=instance, **air_conditioner_data)
-                
-                elif instance.hardware_type == 'Printer':
-                    if printer_data and hasattr(instance, 'printer'):
-                        self._update_related_model(instance.printer, printer_data)
-                    elif printer_data:
-                        Printer.objects.create(hardware=instance, **printer_data)
-                
-                elif instance.hardware_type == 'Scanner':
-                    if scanner_data and hasattr(instance, 'scanner'):
-                        self._update_related_model(instance.scanner, scanner_data)
-                    elif scanner_data:
-                        Scanner.objects.create(hardware=instance, **scanner_data)
+                # Update warranty
+                if hasattr(instance, 'warranty'):
+                    self._update_related_model(
+                        instance.warranty,
+                        {k: v for k, v in warranty_data.items() if v is not None}
+                    )
+                elif any(warranty_data.values()):
+                    Warranty.objects.create(
+                        hardware=instance,
+                        **{k: v for k, v in warranty_data.items() if v is not None}
+                    )
+
+                # Update services
+                if hasattr(instance, 'services'):
+                    # Get or create first service record
+                    service = instance.services.first()
+                    if service:
+                        self._update_related_model(
+                            service,
+                            {k: v for k, v in service_data.items() if v is not None}
+                        )
+                    elif any(service_data.values()):
+                        HardwareService.objects.create(
+                            hardware=instance,
+                            **{k: v for k, v in service_data.items() if v is not None}
+                        )
 
                 return instance
 
