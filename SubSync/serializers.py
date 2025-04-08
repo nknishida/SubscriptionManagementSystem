@@ -778,42 +778,42 @@ class HardwareSerializer(serializers.ModelSerializer):
 
                 # Update hardware type specific models
                 if instance.hardware_type in ['Laptop', 'Desktop']:
-                if computer_data and hasattr(instance, 'computer'):
-                    self._update_related_model(instance.computer, computer_data)
-                elif computer_data:
-                    Computer.objects.create(hardware=instance, **computer_data)
+                    if computer_data and hasattr(instance, 'computer'):
+                        self._update_related_model(instance.computer, computer_data)
+                    elif computer_data:
+                        Computer.objects.create(hardware=instance, **computer_data)
             
-            elif instance.hardware_type in ['Mobile Phone', 'Tablet']:
-                if portable_device_data and hasattr(instance, 'portable_device'):
-                    self._update_related_model(instance.portable_device, portable_device_data)
-                elif portable_device_data:
-                    PortableDevice.objects.create(hardware=instance, **portable_device_data)
-            
-            elif instance.hardware_type == 'Network Device':
-                if network_device_data and hasattr(instance, 'network_device'):
-                    self._update_related_model(instance.network_device, network_device_data)
-                elif network_device_data:
-                    NetworkDevice.objects.create(hardware=instance, **network_device_data)
-            
-            elif instance.hardware_type == 'Air Conditioner':
-                if air_conditioner_data and hasattr(instance, 'air_conditioner'):
-                    self._update_related_model(instance.air_conditioner, air_conditioner_data)
-                elif air_conditioner_data:
-                    AirConditioner.objects.create(hardware=instance, **air_conditioner_data)
-            
-            elif instance.hardware_type == 'Printer':
-                if printer_data and hasattr(instance, 'printer'):
-                    self._update_related_model(instance.printer, printer_data)
-                elif printer_data:
-                    Printer.objects.create(hardware=instance, **printer_data)
-            
-            elif instance.hardware_type == 'Scanner':
-                if scanner_data and hasattr(instance, 'scanner'):
-                    self._update_related_model(instance.scanner, scanner_data)
-                elif scanner_data:
-                    Scanner.objects.create(hardware=instance, **scanner_data)
+                elif instance.hardware_type in ['Mobile Phone', 'Tablet']:
+                    if portable_device_data and hasattr(instance, 'portable_device'):
+                        self._update_related_model(instance.portable_device, portable_device_data)
+                    elif portable_device_data:
+                        PortableDevice.objects.create(hardware=instance, **portable_device_data)
+                
+                elif instance.hardware_type == 'Network Device':
+                    if network_device_data and hasattr(instance, 'network_device'):
+                        self._update_related_model(instance.network_device, network_device_data)
+                    elif network_device_data:
+                        NetworkDevice.objects.create(hardware=instance, **network_device_data)
+                
+                elif instance.hardware_type == 'Air Conditioner':
+                    if air_conditioner_data and hasattr(instance, 'air_conditioner'):
+                        self._update_related_model(instance.air_conditioner, air_conditioner_data)
+                    elif air_conditioner_data:
+                        AirConditioner.objects.create(hardware=instance, **air_conditioner_data)
+                
+                elif instance.hardware_type == 'Printer':
+                    if printer_data and hasattr(instance, 'printer'):
+                        self._update_related_model(instance.printer, printer_data)
+                    elif printer_data:
+                        Printer.objects.create(hardware=instance, **printer_data)
+                
+                elif instance.hardware_type == 'Scanner':
+                    if scanner_data and hasattr(instance, 'scanner'):
+                        self._update_related_model(instance.scanner, scanner_data)
+                    elif scanner_data:
+                        Scanner.objects.create(hardware=instance, **scanner_data)
 
-            return instance
+                return instance
 
         except Exception as e:
             logger.error(f"Error updating hardware: {str(e)}")
