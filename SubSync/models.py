@@ -12,7 +12,7 @@ class User(AbstractUser):
     email = models.EmailField(unique=True)
     username = models.CharField(max_length=150, unique=True)
 
-    profile_picture = models.ImageField(upload_to='profile_pics/', null=True, blank=True)
+    # profile_picture = models.ImageField(upload_to='profile_pics/', null=True, blank=True)
     phone_numbers = models.TextField(blank=True, help_text="Comma-separated list of phone numbers for SMS")
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -454,7 +454,7 @@ class HardwareService(models.Model):
         ('Maintenance Due', 'Maintenance Due'),
         # ('Expired', 'Expired'),
     ]
-    hardware = models.ForeignKey(Hardware, on_delete=models.CASCADE, related_name='services')
+    hardware = models.OneToOneField(Hardware, on_delete=models.CASCADE, related_name='services')
     last_service_date = models.DateField(null=True, blank=True)
     next_service_date = models.DateField(null=True, blank=True)
     free_service_until = models.DateField(null=True, blank=True)
@@ -1041,6 +1041,7 @@ class Resource(models.Model):
 class Notification(models.Model):
     subscription = models.ForeignKey("SubSync.Subscription", on_delete=models.CASCADE, related_name="notifications")
     hardware = models.ForeignKey(Hardware, null=True, blank=True, on_delete=models.CASCADE)
+    Customer = models.ForeignKey(Customer, null=True, blank=True, on_delete=models.CASCADE)
 
     message = models.TextField()
     is_read = models.BooleanField(default=False)

@@ -1952,7 +1952,7 @@ from .models import Hardware
 from .serializers import HardwareSerializer
 
 class RetrieveUpdateDestroyHardwareView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Hardware.objects.all()
+    queryset = Hardware.objects.filter(is_deleted=False)
     # queryset = Hardware.objects.all().prefetch_related(
     #     'purchase', 'warranty', 'services',
     #     'computer', 'portable_device', 'network_device',
