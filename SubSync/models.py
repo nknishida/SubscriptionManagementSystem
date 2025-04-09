@@ -177,13 +177,15 @@ class Subscription(models.Model):
         # Update payment status
         if self.next_payment_date and self.next_payment_date < today:
             self.payment_status = "Pending"
+            if not self.auto_renewal:
+                self.status = "Expired"
             
         # Update subscription status
-        if self.payment_status == "Pending" and not self.auto_renewal:
-            self.status = "Expired"
+        # if self.payment_status == "Pending" and not self.auto_renewal:
+        #     self.status = "Expired"
             
         # Save changes
-        self.save()
+        # self.save()
         
         # Update all related reminders
         self.update_reminders()
