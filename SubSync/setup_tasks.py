@@ -57,7 +57,7 @@ def setup_periodic_tasks():
         name="Update Customer Status",
         defaults={
             "interval": schedule_4,
-            "task": "SubSync.tasks.update_customers_status",
+            "task": "SubSync.tasks.update_customer_status",
             "args": json.dumps([]),
             "kwargs": json.dumps({})
         }
@@ -83,6 +83,19 @@ def setup_periodic_tasks():
         defaults={
             "interval": schedule_5,
             "task": "SubSync.tasks.update_hardware_service_statuses",
+            "args": json.dumps([]),
+            "kwargs": json.dumps({})
+        }
+    )
+
+    schedule_6, _ = IntervalSchedule.objects.get_or_create(
+        every=1, period=IntervalSchedule.MINUTES
+    )
+    PeriodicTask.objects.update_or_create(
+        name="subscription reminder",
+        defaults={
+            "interval": schedule_6,
+            "task": "SubSync.tasks.send_due_reminders",
             "args": json.dumps([]),
             "kwargs": json.dumps({})
         }

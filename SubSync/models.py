@@ -57,15 +57,9 @@ class Subscription(models.Model):
     CATEGORY_CHOICES = ['Software', 'Billing', 'Server', 'Domain']
     PAYMENT_STATUS_CHOICES = ['Paid', 'pending']
     STATUS_CHOICES = ['Active', 'Expired', 'Canceled']
-    subscription_category = models.CharField(
-        max_length=50, choices=[(c, c) for c in CATEGORY_CHOICES]
-    )
-    payment_status = models.CharField(
-        max_length=20, choices=[(s, s) for s in PAYMENT_STATUS_CHOICES]
-    )
-    status = models.CharField(
-        max_length=20, choices=[(s, s) for s in STATUS_CHOICES]
-    )
+    subscription_category = models.CharField(max_length=50, choices=[(c, c) for c in CATEGORY_CHOICES])
+    payment_status = models.CharField(max_length=20, choices=[(s, s) for s in PAYMENT_STATUS_CHOICES])
+    status = models.CharField(max_length=20, choices=[(s, s) for s in STATUS_CHOICES])
     
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='subscriber')
     provider = models.ForeignKey(Provider, on_delete=models.CASCADE, related_name='subscription_provider')
@@ -114,35 +108,35 @@ class Subscription(models.Model):
         # if self.end_date and self.start_date and self.end_date < self.start_date:
         #     raise ValidationError("End date cannot be earlier than the start date.")
         
-    def update_status(self):
-        """Update the subscription status based on !end date//next_payement_date and auto-renewal."""
-        today = now().date()
+    # def update_status(self):
+    #     """Update the subscription status based on !end date//next_payement_date and auto-renewal."""
+    #     today = now().date()
 
-        if self.is_deleted:
-            self.status = "Canceled"
-        # elif self.end_date and today > self.end_date:
-        #     self.status = "Inactive"
-        elif self.next_payment_date:
-            if today > self.next_payment_date:
-                if self.auto_renewal:
-                    self.status = "Active"
-                    # self.last_payment_date = self.next_payment_date or today
-                    # self.calculate_next_payment_date()
-                else:
-                    self.status = "Expired"
-            else:
-                self.status = "Active"
+    #     if self.is_deleted:
+    #         self.status = "Canceled"
+    #     # elif self.end_date and today > self.end_date:
+    #     #     self.status = "Inactive"
+    #     elif self.next_payment_date:
+    #         if today > self.next_payment_date:
+    #             if self.auto_renewal:
+    #                 self.status = "Active"
+    #                 # self.last_payment_date = self.next_payment_date or today
+    #                 # self.calculate_next_payment_date()
+    #             else:
+    #                 self.status = "Expired"
+    #         else:
+    #             self.status = "Active"
 
-    def update_payment_status(self):
-        """Update payment status based on next payment date."""
-        today = now().date()
+    # def update_payment_status(self):
+    #     """Update payment status based on next payment date."""
+    #     today = now().date()
         
-        if self.next_payment_date and today > self.next_payment_date:
-            self.payment_status = "Unpaid"
-        elif self.payment_status == "pending":  # Ensure it doesn't auto-set to "Paid"
-            self.payment_status = "pending"
-        else:
-            self.payment_status = "Paid"  # You may need payment confirmation logic here
+    #     if self.next_payment_date and today > self.next_payment_date:
+    #         self.payment_status = "Pending"
+    #     # elif self.payment_status == "pending":  # Ensure it doesn't auto-set to "Paid"
+    #     #     self.payment_status = "pending"
+    #     else:
+    #         self.payment_status = "Paid"  # You may need payment confirmation logic here
 
     def calculate_next_payment_date(self):
         """Calculate the next payment date based on !start_date //last_payment_date and billing_cycle."""
@@ -175,6 +169,39 @@ class Subscription(models.Model):
 
         print(f"Next Payment Date: {self.next_payment_date}")
         return self.next_payment_date
+    
+    def update_status_and_reminders(self):
+        """Update status, payment status, and manage reminders."""
+        today = timezone.now().date()
+        
+        # Update payment status
+        if self.next_payment_date and self.next_payment_date < today:
+            self.payment_status = "Pending"
+            
+        # Update subscription status
+        if self.payment_status == "Pending" and not self.auto_renewal:
+            self.status = "Expired"
+            
+        # Save changes
+        self.save()
+        
+        # Update all related reminders
+        self.update_reminders()
+        
+    def update_reminders(self):
+        """Update all reminders associated with this subscription."""
+        for reminder_sub in self.reminder_subscriptions.all():
+            reminder = reminder_sub.reminder
+            new_dates = reminder.calculate_all_reminder_dates(self)
+            
+            if new_dates:
+                next_reminder_date = min(d for d in new_dates if d >= timezone.now().date())
+                reminder.reminder_date = next_reminder_date
+                reminder.reminder_status = "pending"
+                reminder.save()
+            else:
+                reminder.reminder_status = "cancelled"
+                reminder.save()
 
     def save(self, *args, **kwargs):
         """Override save method to update status , payment status,and next payment date before saving."""
@@ -192,8 +219,9 @@ class Subscription(models.Model):
             # New object: first-time calculation
             self.next_payment_date = self.calculate_next_payment_date()
 
-        self.update_status()
-        self.update_payment_status()
+        # self.update_status()
+        # self.update_payment_status()
+        self.update_status_and_reminders()
         # if not self.next_payment_date:
         #     self.next_payment_date = self.calculate_next_payment_date()
         super().save(*args, **kwargs)
@@ -664,10 +692,7 @@ class Reminder(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     reminder_type = models.CharField(max_length=50, choices=REMINDER_TYPE_CHOICES, default='renewal')
     scheduled_task_id = models.CharField(max_length=255, blank=True, null=True)
-    # reminder_time = models.TimeField(
-                                    # default="09:00:00"
-                                    # default="15:15:00",
-                                    #  help_text="Time to send the reminder.")
+    # reminder_time = models.TimeField(default="09:00:00"default="15:15:00",help_text="Time to send the reminder.")
 
     def get_valid_day(self, year, month, day):
         """Helper method to get a valid day of the month."""
@@ -744,6 +769,48 @@ class Reminder(models.Model):
         today = timezone.now().date()
         reminder_dates = []
 
+        # is_first_reminder =  Reminder.objects.filter(
+        #     subscription_reminder__subscription=subscription,
+        #     reminder_status="sent"
+        # ).exists()
+        # print(is_first_reminder)
+    
+        # if is_first_reminder:
+        #     if hasattr(subscription, "next_payment_date") and subscription.next_payment_date:
+        #         # Pre-payment reminders
+        #         if subscription.billing_cycle in ['weekly', 'monthly'] and self.reminder_days_before:
+        #             start_date = subscription.next_payment_date - timedelta(days=int(self.reminder_days_before))
+        #             current_date = start_date
+        #             while current_date < subscription.next_payment_date:
+        #                 if current_date >= today:
+        #                     reminder_dates.append(current_date)
+        #                 current_date += timedelta(days=1)
+        #         elif hasattr(subscription, "billing_cycle") and subscription.billing_cycle in ['quarterly', 'semi-annual', 'annual', 'biennial', 'triennial']:
+        #             if self.reminder_months_before and self.reminder_day_of_month:
+        #                 start_date = max(
+        #                     subscription.next_payment_date - relativedelta(months=self.reminder_months_before),
+        #                     today
+        #                 )
+        #                 start_date = start_date.replace(
+        #                     day=self.get_valid_day(start_date.year, start_date.month, self.reminder_day_of_month)
+        #                 )
+        #                 current_date = start_date
+        #                 while current_date < subscription.next_payment_date:
+        #                     if current_date >= today:
+        #                         reminder_dates.append(current_date)
+        #                     current_date += relativedelta(months=1)
+
+        #         # Add optional_days_before reminder if present
+        #         if self.optional_days_before:
+        #             optional_reminder_date = subscription.next_payment_date - timedelta(days=self.optional_days_before)
+        #             current_date = optional_reminder_date
+        #             while current_date < subscription.next_payment_date:
+        #                     if optional_reminder_date >= today:
+        #                         reminder_dates.append(optional_reminder_date)
+        #                     current_date += timedelta(days=1)
+
+        #     return sorted(list(set(reminder_dates)))
+
         # Stop reminders if the subscription is paid
         if hasattr(subscription, "payment_status") and subscription.payment_status == "Paid":
             logger.info(f"Subscription ID {subscription.id} is paid. No reminders needed.")
@@ -794,6 +861,38 @@ class Reminder(models.Model):
 
         logger.info(f"Generated Reminder Dates(in models.py): {reminder_dates}")
         return reminder_dates
+    
+    def should_send_reminder(self, subscription):
+        """
+        Determine if a reminder should be sent based on subscription status
+        """
+        if (subscription.payment_status == "Paid" and 
+        subscription.next_payment_date and
+        (subscription.next_payment_date - timezone.now().date()).days <= 10):
+            subscription.payment_status = "Pending"
+            subscription.save()
+
+        if subscription.is_deleted:
+            return False
+        
+        # if self.reminder_status == "pending" and not Reminder.objects.filter(
+        #     subscription_reminder__subscription=subscription, 
+        #     reminder_status="sent"
+        # ).exists():
+        #     return True
+            
+        # Always send overdue reminders if payment is pending
+        if subscription.payment_status == "Pending":
+            return True
+        
+        # if subscription.payment_status == "Paid":
+        #     return False
+            
+        # Don't send renewal reminders for expired/canceled subscriptions
+        if subscription.status in [ "Canceled"] and self.reminder_type == "renewal":
+            return False
+            
+        return True
 
     def __str__(self):
         return f"Reminder of type {self.reminder_type} - {self.reminder_status}"

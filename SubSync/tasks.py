@@ -332,36 +332,6 @@ def send_reminder_notification(reminder_id,user_id=None):
 
 
 
-import logging
-from twilio.rest import Client
-from django.conf import settings
-
-logger = logging.getLogger(__name__)
-
-# Load Twilio credentials from Django settings (or you can use environment variables)
-TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID')
-TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN')
-TWILIO_PHONE_NUMBER = os.getenv('TWILIO_PHONE_NUMBER')  # Your Twilio sender number
-
-def send_sms_notification(phone_numbers, message):
-    """Send SMS notifications using Twilio."""
-    try:
-        client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-
-        for phone in phone_numbers:
-            if phone.strip():
-                logger.info(f"Sending SMS to {phone}: {message}")
-                message_response = client.messages.create(
-                    body=message,
-                    from_=TWILIO_PHONE_NUMBER,
-                    to=phone.strip()
-                )
-                logger.info(f"SMS sent successfully to {phone}. SID: {message_response.sid}")
-        
-        return True
-    except Exception as e:
-        logger.error(f"Failed to send SMS: {e}")
-        return False
 
 
 # def send_in_app_notification(subscription, message):
@@ -461,7 +431,6 @@ def update_subscriptions_status():
         #     subscription.status = "Inactive"
         #     subscription.payment_status = "Unpaid"
         
-        
         if subscription.next_payment_date:
             if today > subscription.next_payment_date:
                 if subscription.auto_renewal:
@@ -548,17 +517,17 @@ def update_customer_status():
 
         logger.info(f"Checking customer {customer.id}: end_date={customer.end_date}, today={today}")
 
-        # ✅ If end_date is over, mark as Inactive
+        #  If end_date is over, mark as Inactive
         if customer.end_date and today > customer.end_date:
             logger.info(f"Customer {customer.id}: End date passed, marking as Inactive")
             customer.status = "Inactive"
 
-        # ✅ Add to bulk update if status changed
+        # Add to bulk update if status changed
         if customer.status != original_status:
             logger.info(f"Customer {customer.id} updated: status={original_status} -> {customer.status}")
             to_update.append(customer)
 
-    # ✅ Perform bulk update for efficiency
+    #  Perform bulk update for efficiency
     if to_update:
         with transaction.atomic():
             Customer.objects.bulk_update(to_update, ["status"])
@@ -639,3 +608,199 @@ def update_hardware_service_statuses():
     except Exception as e:
         logger.error(f"Error updating hardware service statuses: {str(e)}")
         raise
+
+from celery import shared_task
+from django.utils import timezone
+from .models import Reminder
+from django.core.mail import send_mail
+from django.template.loader import render_to_string
+
+@shared_task
+def send_due_reminders():
+    """Send all reminders that are due today."""
+    # now = timezone.now()
+    # logger.info(f"Current server time: {now}")
+    # logger.info(f"Current server date: {now.date()}")
+    from django.utils import timezone
+    import pytz
+    
+    # Get current time in configured timezone
+    tz = pytz.timezone('Asia/Kolkata')
+    now = timezone.now().astimezone(tz)
+    
+    today = now.date()
+    logger.info(f"=== Starting reminder processing for {today} ===")
+
+    upcoming_subscriptions = Subscription.objects.filter(
+        next_payment_date__lte=today + timedelta(days=10),  # Within next 10 days
+        payment_status="Paid"
+    )
+    
+    for subscription in upcoming_subscriptions:
+        subscription.payment_status = "Pending"
+        subscription.save()
+        logger.info(f"Updated subscription {subscription.id} to Pending (due {subscription.next_payment_date})")
+        
+    due_reminders = Reminder.objects.filter(
+        reminder_date=today,
+        reminder_status="pending"
+    ).prefetch_related('subscription_reminder__subscription')
+
+    logger.info(f"Found {due_reminders.count()} reminders to process")
+    
+    for reminder in due_reminders:
+        logger.info(f"Processing reminder ID: {reminder.id}")
+        subscription = reminder.subscription_reminder.first().subscription
+        logger.info(f" - Subscription: {subscription.id} ({subscription.status})")
+
+        if today >= subscription.next_payment_date:
+                subscription.payment_status = "Pending"
+                subscription.save()        
+        
+        # Check if we should still send this reminder
+        if not reminder.should_send_reminder(subscription):
+            logger.info(" - Skipping: shouldn't send per business rules")
+            reminder.reminder_status = "cancelled"
+            reminder.save()
+            continue
+            
+        # Prepare and send the reminder
+        try:
+            logger.info(" - Sending reminder...")
+            # context = {
+            #     'subscription': subscription,
+            #     'reminder': reminder,
+            #     'is_overdue': subscription.payment_status == "Unpaid"
+            # }
+            is_overdue = subscription.next_payment_date < today if subscription.next_payment_date else False
+            if is_overdue:
+                    subject = f"URGENT: Overdue Payment for {subscription.provider.provider_name}"
+                    message = f"""
+                    OVERDUE SUBSCRIPTION PAYMENT
+                    ----------------------------
+                    
+                    Provider: {subscription.provider.provider_name}
+                    Category: {subscription.subscription_category}
+                    Amount Due: ${subscription.cost}
+                    Due Date: {subscription.next_payment_date}
+                    Days Overdue: {(today - subscription.next_payment_date).days}
+                    
+                    {reminder.custom_message or 'Please make payment immediately to avoid service disruption.'}
+                    """
+            else:
+                    subject = f"Upcoming Payment for {subscription.provider.provider_name}"
+                    message = f"""
+                    SUBSCRIPTION RENEWAL REMINDER
+                    ----------------------------
+                    
+                    Provider: {subscription.provider.provider_name}
+                    Category: {subscription.subscription_category}
+                    Amount Due: ${subscription.cost}
+                    Due Date: {subscription.next_payment_date}
+                    Days Remaining: {(subscription.next_payment_date - today).days}
+                    
+                    {reminder.custom_message or 'Please renew your subscription to avoid service interruption.'}
+                    """
+            
+            # Email reminder
+            if reminder.notification_method in ['email', 'both']:
+                subject = "Subscription Reminder"
+                # if context['is_overdue']:
+                #     subject = "URGENT: Overdue Subscription Payment"
+                    
+                # message = render_to_string('reminder_email.html', context)
+                
+                # message = f"""
+                # Subscription Reminder
+                # ---------------------
+                
+                # Provider: {subscription.provider.provider_name}
+                # Category: {subscription.subscription_category}
+                # Amount: ${subscription.cost}
+                # Due Date: {subscription.next_payment_date}
+                
+                # {reminder.custom_message or 'Please renew your subscription to avoid service interruption.'}
+                # """
+                send_mail(
+                    subject,
+                    message.strip(),
+                    DEFAULT_FROM_EMAIL,
+                    [r.strip() for r in reminder.recipients.split(',')],
+                    html_message=message
+                )
+            
+            # SMS reminder (implement your SMS gateway integration)
+            if reminder.notification_method in ['sms', 'both']:
+                    sms_message = f"{subject}: Due {subscription.next_payment_date}. {message[:100]}..."
+                    # send_sms_notification(reminder.recipients.split(','), sms_message)
+                    send_sms_notification(os.getenv('TWILIO_DEFAULT_PHONE_NUMBER'), sms_message)
+
+                
+            # Mark as sent
+            reminder.reminder_status = "sent"
+            reminder.save()
+
+            logger.info(" - Reminder sent successfully")
+            future_dates = reminder.calculate_all_reminder_dates(subscription)
+            future_dates = [d for d in future_dates if d > today]
+            if future_dates:
+                # Schedule the next earliest reminder
+                next_reminder_date = min(future_dates)
+                reminder.reminder_date = next_reminder_date
+                reminder.reminder_status = "pending"
+                reminder.save()
+                logger.info(f"Next reminder scheduled for {next_reminder_date}")
+            else:
+                logger.info("No future reminders needed")
+            logger.info(f"Reminder {reminder.id} processed successfully")
+        
+            # Schedule next reminder if needed
+            # schedule_next_reminder(reminder, subscription)
+            
+        except Exception as e:
+            logger.error(f"Failed to send reminder {reminder.id}: {str(e)}")
+            reminder.reminder_status = "failed"
+            reminder.save()
+
+def schedule_next_reminder(reminder, subscription):
+    """Schedule the next reminder in the series."""
+    future_dates = reminder.calculate_all_reminder_dates(subscription)
+    future_dates = [d for d in future_dates if d > timezone.now().date()]
+    
+    if future_dates:
+        next_date = min(future_dates)
+        reminder.reminder_date = next_date
+        reminder.reminder_status = "pending"
+        reminder.save()
+
+
+import logging
+from twilio.rest import Client
+from django.conf import settings
+
+logger = logging.getLogger(__name__)
+
+# Load Twilio credentials from Django settings (or you can use environment variables)
+TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID')
+TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN')
+TWILIO_PHONE_NUMBER = os.getenv('TWILIO_PHONE_NUMBER')  # Your Twilio sender number
+
+def send_sms_notification(phone_numbers, message):
+    """Send SMS notifications using Twilio."""
+    try:
+        client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+
+        for phone in phone_numbers:
+            if phone.strip():
+                logger.info(f"Sending SMS to {phone}: {message}")
+                message_response = client.messages.create(
+                    body=message,
+                    from_=TWILIO_PHONE_NUMBER,
+                    to=phone.strip()
+                )
+                logger.info(f"SMS sent successfully to {phone}. SID: {message_response.sid}")
+        
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send SMS: {e}")
+        return False

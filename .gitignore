@@ -7,3 +7,7 @@ SubSync/__pycache__
 .env
 
 media/profile_pics
+
+SubSync/signals copy.py
+SubSync/tasks copy.py
+SubSync/utils copy.py
