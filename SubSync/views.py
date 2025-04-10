@@ -2496,13 +2496,13 @@ class ServerUsageView(APIView):
 
         return Response(combined_data, status=status.HTTP_200_OK)
     
-# ✅ API to List All Customers
+#  API to List All Customers
 class CustomerListView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
     queryset = Customer.objects.prefetch_related('resources').filter(is_deleted=False)
     serializer_class = CustomerSerializer
 
-# ✅ API to Retrieve, Update, or Delete a Customer
+#  API to Retrieve, Update, or Delete a Customer
 class CustomerDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAuthenticated]
     queryset = Customer.objects.all()
@@ -3368,3 +3368,22 @@ class SubscriptionHistoryView(generics.ListAPIView):
     def get_queryset(self):
         subscription_id = self.kwargs['pk']
         return Subscription.history.filter(id=subscription_id).select_related('history_user')
+    
+from rest_framework import generics, permissions
+from .models import Notification
+from .serializers import NotificationSerializer
+
+class NotificationListAPI(generics.ListAPIView):
+    serializer_class = NotificationSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        return Notification.objects.filter(user=self.request.user).order_by('-created_at')
+
+class MarkNotificationReadAPI(generics.UpdateAPIView):
+    queryset = Notification.objects.all()
+    serializer_class = NotificationSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def perform_update(self, serializer):
+        serializer.save(is_read=True)

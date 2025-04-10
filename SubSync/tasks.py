@@ -379,7 +379,7 @@ def send_in_app_notification(entity, message):
 from celery import shared_task
 from django.utils import timezone
 from datetime import timedelta
-from .models import Subscription, Hardware, Customer, User, Warranty
+from .models import Notification, Subscription, Hardware, Customer, User, Warranty
 
 @shared_task
 def delete_old_recycle_bin_items():
@@ -449,7 +449,7 @@ def update_subscriptions_status():
                 else:
                     subscription.status = "Expired"
                     logger.info(f"Subscription {subscription.id}: Auto-renewal is disabled, marking as Expired")
-                    subscription.payment_status = "Unpaid"
+                    subscription.payment_status = "Pending"
             else:
                 subscription.payment_status = "Paid"
                 subscription.status = "Active" 
@@ -632,14 +632,15 @@ def send_due_reminders():
     logger.info(f"=== Starting reminder processing for {today} ===")
 
     upcoming_subscriptions = Subscription.objects.filter(
-        next_payment_date__lte=today + timedelta(days=10),  # Within next 10 days
-        payment_status="Paid"
+        next_payment_date__lte=today + timedelta(days=7),  # Within next 10 days
+        payment_status="Paid",is_deleted=False
     )
     
     for subscription in upcoming_subscriptions:
-        subscription.payment_status = "Pending"
-        subscription.save()
-        logger.info(f"Updated subscription {subscription.id} to Pending (due {subscription.next_payment_date})")
+        if (subscription.next_payment_date - today).days <= 7:
+            subscription.payment_status = "Pending"
+            subscription.save()
+            logger.info(f"Updated subscription {subscription.id} to Pending (due {subscription.next_payment_date})")
         
     due_reminders = Reminder.objects.filter(
         reminder_date=today,
@@ -658,7 +659,7 @@ def send_due_reminders():
                 subscription.save()        
         
         # Check if we should still send this reminder
-        if not reminder.should_send_reminder(subscription):
+        if subscription.is_deleted or not reminder.should_send_reminder(subscription):
             logger.info(" - Skipping: shouldn't send per business rules")
             reminder.reminder_status = "cancelled"
             reminder.save()
@@ -734,6 +735,38 @@ def send_due_reminders():
                     sms_message = f"{subject}: Due {subscription.next_payment_date}. {message[:100]}..."
                     # send_sms_notification(reminder.recipients.split(','), sms_message)
                     send_sms_notification(os.getenv('TWILIO_DEFAULT_PHONE_NUMBER'), sms_message)
+
+            user = subscription.user
+                    
+            notification =Notification.objects.create(
+                user=user,
+                subscription=subscription,
+                title=f"Subscription Reminder: {subscription.provider.provider_name}",
+                message=reminder.custom_message or f"Your {subscription.provider.provider_name} subscription is due on {subscription.next_payment_date}",
+                notification_type='reminder',
+                scheduled_for=timezone.now()
+            )
+            # Send WebSocket message
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+            
+            channel_layer = get_channel_layer()
+            async_to_sync(channel_layer.group_send)(
+                f'notifications_{user.id}',
+                {
+                    'type': 'send_notification',
+                    'content': {
+                        'type': 'new_notification',
+                        'notification': {
+                            'id': notification.id,
+                            'title': notification.title,
+                            'message': notification.message,
+                            'is_read': notification.is_read,
+                            'created_at': notification.created_at.isoformat()
+                        }
+                    }
+                }
+            )
 
                 
             # Mark as sent

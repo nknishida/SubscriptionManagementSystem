@@ -173,19 +173,33 @@ class Subscription(models.Model):
     def update_status_and_reminders(self):
         """Update status, payment status, and manage reminders."""
         today = timezone.now().date()
+
+        if self.is_deleted:
+            self.status = "Canceled"
+            self.payment_status = "Unpaid"
+            return
         
         # Update payment status
-        if self.next_payment_date and self.next_payment_date < today:
-            self.payment_status = "Pending"
-            if not self.auto_renewal:
-                self.status = "Expired"
-            
-        # Update subscription status
-        # if self.payment_status == "Pending" and not self.auto_renewal:
-        #     self.status = "Expired"
-            
-        # Save changes
-        # self.save()
+        if self.next_payment_date:
+            if today > self.next_payment_date:
+                if self.auto_renewal and self.payment_status == "Paid":
+                    # Auto-renewal case
+                    self.last_payment_date = self.next_payment_date
+                    self.calculate_next_payment_date()
+                    self.payment_status = "Paid"
+                else:
+                    # Overdue case
+                    self.payment_status = "Pending"
+                    if not self.auto_renewal:
+                        self.status = "Expired"
+            elif (self.next_payment_date - today).days <= 10:
+                # Upcoming payment case
+                if self.payment_status == "Paid":
+                    self.payment_status = "Pending"
+            else:
+                # Active and paid case
+                self.payment_status = "Paid"
+                self.status = "Active"
         
         # Update all related reminders
         self.update_reminders()
@@ -868,11 +882,11 @@ class Reminder(models.Model):
         """
         Determine if a reminder should be sent based on subscription status
         """
-        if (subscription.payment_status == "Paid" and 
-        subscription.next_payment_date and
-        (subscription.next_payment_date - timezone.now().date()).days <= 10):
+        if (subscription.payment_status == "Paid" and subscription.next_payment_date and
+        (subscription.next_payment_date - timezone.now().date()).days <= 7):
             subscription.payment_status = "Pending"
             subscription.save()
+            return True
 
         if subscription.is_deleted:
             return False
@@ -887,8 +901,8 @@ class Reminder(models.Model):
         if subscription.payment_status == "Pending":
             return True
         
-        # if subscription.payment_status == "Paid":
-        #     return False
+        if subscription.payment_status == "Paid":
+            return False
             
         # Don't send renewal reminders for expired/canceled subscriptions
         if subscription.status in [ "Canceled"] and self.reminder_type == "renewal":
@@ -968,8 +982,8 @@ class Customer(models.Model):
 
     def calculate_next_payment_date(self,force_update=False):
         """Calculate the next payment date based on !provisioned_date //last_payment_date and billing_cycle."""
-        if not self.provisioned_date:
-            print("provisioned date not set")
+        if not self.start_date:
+            print("start date not set")
             return None
 
         cycle_mapping = {
@@ -988,7 +1002,7 @@ class Customer(models.Model):
 
         # If next_payment_date is not set, calculate it from !start_date//last_payment_date
         if force_update or not self.next_payment_date:
-            base_date = self.last_payment_date or self.provisioned_date
+            base_date = self.last_payment_date or self.start_date
             self.next_payment_date = base_date + cycle_delta
             print(f"1 Next Payment Date: {self.next_payment_date}")
         else:
@@ -1139,14 +1153,31 @@ class Resource(models.Model):
 #     usage_end_date = models.DateTimeField(help_text="End date of resource usage.")
 #     payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, default='pending')
 
-class Notification(models.Model):
-    subscription = models.ForeignKey("SubSync.Subscription", on_delete=models.CASCADE, related_name="notifications")
-    hardware = models.ForeignKey(Hardware, null=True, blank=True, on_delete=models.CASCADE)
-    Customer = models.ForeignKey(Customer, null=True, blank=True, on_delete=models.CASCADE)
+# class Notification(models.Model):
+#     subscription = models.ForeignKey("SubSync.Subscription", on_delete=models.CASCADE, related_name="notifications")
+#     hardware = models.ForeignKey(Hardware, null=True, blank=True, on_delete=models.CASCADE)
+#     Customer = models.ForeignKey(Customer, null=True, blank=True, on_delete=models.CASCADE)
 
+#     message = models.TextField()
+#     is_read = models.BooleanField(default=False)
+#     created_at = models.DateTimeField(default=now)
+
+#     def __str__(self):
+#         return f"Notification for {self.subscription} - {self.message[:20]}"
+# models.py
+class Notification(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    subscription = models.ForeignKey(Subscription, on_delete=models.CASCADE, null=True, blank=True)
+    title = models.CharField(max_length=255)
     message = models.TextField()
     is_read = models.BooleanField(default=False)
-    created_at = models.DateTimeField(default=now)
+    notification_type = models.CharField(max_length=50, choices=[
+        ('reminder', 'Reminder'),
+        ('payment', 'Payment'),
+        ('system', 'System')
+    ])
+    created_at = models.DateTimeField(auto_now_add=True)
+    scheduled_for = models.DateTimeField()
 
-    def __str__(self):
-        return f"Notification for {self.subscription} - {self.message[:20]}"
+    class Meta:
+        ordering = ['-created_at']

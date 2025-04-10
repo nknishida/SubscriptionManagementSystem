@@ -77,6 +77,7 @@ INSTALLED_APPS = [
     "django_celery_beat",
     'SubSync.apps.SubsyncConfig',
     'simple_history',
+    'channels',
 
 ]
 

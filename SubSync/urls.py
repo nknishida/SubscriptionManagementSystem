@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import ActiveSubscriptionsView, AddHardwareAPIView, CustomTokenRefreshView, CustomerAPIView, CustomerDetailView, CustomerListView, CustomerTypePercentageAPIView, DashboardOverview, DashboardOverviewAll, ExpiredSubscriptionsView, HardwareSummaryView, IsSuperUserCheckAPIView, ListHardwareView, LoginAPIView, ForgotPasswordAPIView, LogoutView, MarkNotificationAsReadView, NotificationListView, ProviderDetailView, ProviderListView, RecycleBinView, ReminderAPIView, ResetPasswordAPIView, CreateUserAPIView, ResourceCreateView, ResourceDetailUpdateView, ResourceListCreateView, ResourceNameListView, RetrieveUpdateDestroyHardwareView, ServerListByHostingTypeAPIView, ServerReportAPIView, ServerUsageView, SubscriptionCategoryDistributionView, SubscriptionChoicesView, SubscriptionCountView, SubscriptionCreateView, ProviderCreateView,ChangePasswordView, SubscriptionListView, SubscriptionDetailView, SubscriptionMonthlyAnalysisView, SubscriptionReportView, SubscriptionSoftDeleteAPIView, UpcomingHardwareAPIView, UserListView, UserProfileView, UserStatusUpdateView, WarningSubscriptionsView, YearlyHardwareCostBreakdownAPIView, hardware_report, spending_report
+from .views import ActiveSubscriptionsView, AddHardwareAPIView, CustomTokenRefreshView, CustomerAPIView, CustomerDetailView, CustomerListView, CustomerTypePercentageAPIView, DashboardOverview, DashboardOverviewAll, ExpiredSubscriptionsView, HardwareSummaryView, IsSuperUserCheckAPIView, ListHardwareView, LoginAPIView, ForgotPasswordAPIView, LogoutView, MarkNotificationAsReadView, MarkNotificationReadAPI, NotificationListAPI, NotificationListView, ProviderDetailView, ProviderListView, RecycleBinView, ReminderAPIView, ResetPasswordAPIView, CreateUserAPIView, ResourceCreateView, ResourceDetailUpdateView, ResourceListCreateView, ResourceNameListView, RetrieveUpdateDestroyHardwareView, ServerListByHostingTypeAPIView, ServerReportAPIView, ServerUsageView, SubscriptionCategoryDistributionView, SubscriptionChoicesView, SubscriptionCountView, SubscriptionCreateView, ProviderCreateView,ChangePasswordView, SubscriptionListView, SubscriptionDetailView, SubscriptionMonthlyAnalysisView, SubscriptionReportView, SubscriptionSoftDeleteAPIView, UpcomingHardwareAPIView, UserListView, UserProfileView, UserStatusUpdateView, WarningSubscriptionsView, YearlyHardwareCostBreakdownAPIView, hardware_report, spending_report
 from .views import SubscriptionDetailUpdateView, ExpenditureAnalysisView
 from rest_framework_simplejwt import views as jwt_views
 
@@ -71,8 +71,11 @@ urlpatterns = [
     path('resources/<int:pk>/', ResourceDetailUpdateView.as_view(), name='resource-detail'),
     path('servers-by-hosting-type/', ServerListByHostingTypeAPIView.as_view(), name='get_servers_by_hosting_type'),
 
-    path("notifications/", NotificationListView.as_view(), name="notification-list"),
-    path("notifications/<int:pk>/", MarkNotificationAsReadView.as_view(), name="mark-notification-read"),
+    # path("notifications/", NotificationListView.as_view(), name="notification-list"),
+    # path("notifications/<int:pk>/", MarkNotificationAsReadView.as_view(), name="mark-notification-read"),
+
+    path('notifications/', NotificationListAPI.as_view(), name='notifications-list'),
+    path('notifications/<int:pk>/read/', MarkNotificationReadAPI.as_view(), name='mark-notification-read'),
 
 
 
