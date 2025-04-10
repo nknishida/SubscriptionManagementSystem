@@ -532,6 +532,9 @@ class HardwareServiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = HardwareService
         exclude = ['hardware']
+        extra_kwargs = {
+            'hardware': {'required': False}  # Since we set it manually
+        }
 
 class ComputerSerializer(serializers.ModelSerializer):
     class Meta:
@@ -600,7 +603,7 @@ from django.core.validators import validate_email
 class HardwareSerializer(serializers.ModelSerializer):
     purchase = PurchaseSerializer(required=False)
     warranty = WarrantySerializer(required=False)
-    services = HardwareServiceSerializer( required=False)
+    services = HardwareServiceSerializer( required=False,many=False)
 
     computer = ComputerSerializer(required=False)
     portable_device = PortableDeviceSerializer(required=False)
@@ -633,7 +636,8 @@ class HardwareSerializer(serializers.ModelSerializer):
         # Extract nested data
         purchase_data = validated_data.pop('purchase', None)
         warranty_data = validated_data.pop('warranty', None)
-        services_data = validated_data.pop('services', [])
+        # services_data = validated_data.pop('services', [])
+        services_data = validated_data.pop('services', None)
         computer_data = validated_data.pop('computer', None)
         portable_device_data = validated_data.pop('portable_device', None)
         network_device_data = validated_data.pop('network_device', None)
@@ -653,8 +657,8 @@ class HardwareSerializer(serializers.ModelSerializer):
                     Purchase.objects.create(hardware=hardware, **purchase_data)
                 if warranty_data:
                     Warranty.objects.create(hardware=hardware, **warranty_data)
-                for service_data in services_data:
-                    HardwareService.objects.create(hardware=hardware, **service_data)
+                if services_data :
+                    HardwareService.objects.create(hardware=hardware, **services_data)
 
                 if computer_data:
                     computer_data["hardware"] = hardware
@@ -746,12 +750,31 @@ class HardwareSerializer(serializers.ModelSerializer):
         except:
             raise serializers.ValidationError("Invalid email format for recipients.")
         return value
+    # def validate_services(self, value):
+    #     """Ensure service dates are valid."""
+    #     for service in value:
+    #         if service.get("last_service_date") and service.get("next_service_date"):
+    #             if service["last_service_date"] > service["next_service_date"]:
+    #                 raise serializers.ValidationError("Next service date must be after last service date.")
+    #     return value
+    # def validate_services(self, value):
+    #     """Ensure service dates are valid."""
+    #     if value and isinstance(value, dict):  # Check if it's a dictionary
+    #         if value.get("last_service_date") and value.get("next_service_date"):
+    #             if value["last_service_date"] > value["next_service_date"]:
+    #                 raise serializers.ValidationError(
+    #                     "Next service date must be after last service date."
+    #                 )
+    #     return value
     def validate_services(self, value):
         """Ensure service dates are valid."""
-        for service in value:
-            if service.get("last_service_date") and service.get("next_service_date"):
-                if service["last_service_date"] > service["next_service_date"]:
-                    raise serializers.ValidationError("Next service date must be after last service date.")
+        if value:  # value is now a single dict
+            last_date = value.get("last_service_date")
+            next_date = value.get("next_service_date")
+            if last_date and next_date and last_date > next_date:
+                raise serializers.ValidationError(
+                    "Next service date must be after last service date."
+                )
         return value
     
     def update(self, instance, validated_data):

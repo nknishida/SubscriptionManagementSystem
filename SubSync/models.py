@@ -921,10 +921,14 @@ class ReminderSubscription(models.Model):
 class ReminderHardware(models.Model):
     reminder = models.ForeignKey(Reminder, on_delete=models.CASCADE, related_name='hardware_reminder')
     hardware = models.ForeignKey('Hardware', on_delete=models.CASCADE)
-
-class ReminderCustomer(models.Model):
-    reminder = models.ForeignKey(Reminder, on_delete=models.CASCADE, related_name='customer_reminder')
-    customer = models.ForeignKey('Customer', on_delete=models.CASCADE)
+    reminder_type = models.CharField(max_length=50, choices=[
+        ('warranty', 'Warranty Expiry'),
+        ('service', 'Service Due'),
+        ('maintenance', 'Maintenance')
+    ])
+    
+    class Meta:
+        unique_together = ('reminder', 'hardware', 'reminder_type')
 
 class Customer(models.Model):
     # STATUS_CHOICES = [
@@ -1025,6 +1029,10 @@ class Customer(models.Model):
     class Meta:
         db_table = 'customer'
         ordering = ['-created_at']
+
+class ReminderCustomer(models.Model):
+    reminder = models.ForeignKey(Reminder, on_delete=models.CASCADE, related_name='customer_reminder')
+    customer = models.ForeignKey(Customer, on_delete=models.CASCADE)
 
 class Resource(models.Model):
     # RESOURCE_TYPE_CHOICES = [
@@ -1168,6 +1176,8 @@ class Resource(models.Model):
 class Notification(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     subscription = models.ForeignKey(Subscription, on_delete=models.CASCADE, null=True, blank=True)
+    hardware = models.ForeignKey(Hardware, on_delete=models.CASCADE, null=True, blank=True)
+    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, null=True, blank=True)
     title = models.CharField(max_length=255)
     message = models.TextField()
     is_read = models.BooleanField(default=False)

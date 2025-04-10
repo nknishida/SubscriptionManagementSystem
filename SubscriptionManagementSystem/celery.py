@@ -21,4 +21,12 @@ app.conf.beat_schedule = {
         'task': 'SubSync.tasks.update_subscriptions_status',
         'schedule': crontab(hour=0, minute=0),  # Run daily at midnight
     },
+    'send-daily-hardware-reminders': {
+        'task': 'SubSync.tasks.send_hardware_reminders',
+        'schedule': crontab(hour=9, minute=0),  # Run daily at 9 AM
+    },
+    'send-daily-customer-reminders': {
+        'task': 'SubSync.tasks.send_customer_reminders',
+        'schedule': crontab(hour=9, minute=0),  # Run daily at 9 AM
+    },
 }

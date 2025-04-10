@@ -1728,9 +1728,9 @@ class AddHardwareAPIView(APIView):
                     }
 
                     # Create both reminders
-                    for reminder_data, reminder_name in [
-                        (maintenance_reminder_data, "Maintenance"),
-                        (warranty_reminder_data, "Warranty")
+                    for reminder_data, reminder_name ,reminder_type in [
+                        (maintenance_reminder_data, "Maintenance","maintenance"),
+                        (warranty_reminder_data, "Warranty","warranty")
                     ]:
                         try:
                             reminder = Reminder.objects.create(
@@ -1744,7 +1744,7 @@ class AddHardwareAPIView(APIView):
                                 custom_message=reminder_data.get("custom_message"),
                                 reminder_status=reminder_data.get("reminder_status", "pending"),
                             )
-                            ReminderHardware.objects.create(reminder=reminder, hardware=hardware)
+                            ReminderHardware.objects.create(reminder=reminder, hardware=hardware,reminder_type=reminder_type)
                             logger.info(f"{reminder_name} reminder created and linked to hardware: {reminder}")
                         
                         except Exception as e:
@@ -1810,13 +1810,13 @@ class AddHardwareAPIView(APIView):
                     "is_extended_warranty": data.get("isExtendedWarranty", False),
                     "extended_warranty_period": extended_warranty_period,
                 },
-                "services": [{
+                "services": {
                     "last_service_date": parse_date(data.get("lastServiceDate")),
                     "next_service_date": parse_date(data.get("nextServiceDate")),
                     "free_service_until": parse_date(data.get("freeServiceUntil")),
                     "service_cost": Decimal(data["serviceCost"]) if data.get("serviceCost") else None,
                     "service_provider": data.get("serviceProvider"),
-                }],
+                },
                 
             }
             
@@ -2412,7 +2412,7 @@ class ServerListByHostingTypeAPIView(APIView):
             return Response({"error": "hosting_type is required"}, status=status.HTTP_400_BAD_REQUEST)
 
         # Fetch server names based on hosting_type
-        if hosting_type.lower() == "inhouse":
+        if hosting_type.lower() == "on-premise":
             # servers = Computer.objects.values_list('hardware_server_name', flat=True)
             servers = Computer.objects.filter(computer_type="Server",hardware__is_deleted=False).values_list('hardware_server_name', flat=True)
             print(servers)
@@ -2421,9 +2421,9 @@ class ServerListByHostingTypeAPIView(APIView):
             servers = Servers.objects.filter(server_type="External",subscription__is_deleted=False).values_list('server_name', flat=True)
             print(servers)
 
-        elif hosting_type.lower() == "cloud":
-            servers = Servers.objects.filter(server_type="Cloud",subscription__is_deleted=False).values_list('server_name', flat=True)
-            print(servers)
+        # elif hosting_type.lower() == "cloud":
+        #     servers = Servers.objects.filter(server_type="Cloud",subscription__is_deleted=False).values_list('server_name', flat=True)
+        #     print(servers)
 
         else:
             return Response(

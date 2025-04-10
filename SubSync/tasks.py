@@ -747,26 +747,35 @@ def send_due_reminders():
                 scheduled_for=timezone.now()
             )
             # Send WebSocket message
-            from channels.layers import get_channel_layer
-            from asgiref.sync import async_to_sync
-            
-            channel_layer = get_channel_layer()
-            async_to_sync(channel_layer.group_send)(
-                f'notifications_{user.id}',
-                {
-                    'type': 'send_notification',
-                    'content': {
-                        'type': 'new_notification',
-                        'notification': {
-                            'id': notification.id,
-                            'title': notification.title,
-                            'message': notification.message,
-                            'is_read': notification.is_read,
-                            'created_at': notification.created_at.isoformat()
+            try:
+                from channels.layers import get_channel_layer
+                from asgiref.sync import async_to_sync
+                channel_layer = get_channel_layer()
+            except Exception as e:
+                channel_layer = None
+                logger.warning(f"Could not initialize channel layer: {str(e)}")
+            if channel_layer is not None:
+                try:
+                    async_to_sync(channel_layer.group_send)(
+                        f'notifications_{user.id}',
+                        {
+                            'type': 'send_notification',
+                            'content': {
+                                'type': 'new_notification',
+                                'notification': {
+                                    'id': notification.id,
+                                    'title': notification.title,
+                                    'message': notification.message,
+                                    'is_read': notification.is_read,
+                                    'created_at': notification.created_at.isoformat()
+                                }
+                            }
                         }
-                    }
-                }
-            )
+                    )
+                except Exception as e:
+                    logger.error(f"Error sending WebSocket message: {str(e)}")
+            else:
+                logger.warning("No channel layer available - skipping WebSocket notification")
 
                 
             # Mark as sent
@@ -818,22 +827,291 @@ TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID')
 TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN')
 TWILIO_PHONE_NUMBER = os.getenv('TWILIO_PHONE_NUMBER')  # Your Twilio sender number
 
-def send_sms_notification(phone_numbers, message):
+def send_sms_notification(phone, message):
     """Send SMS notifications using Twilio."""
     try:
         client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+        phone_str = str(phone).strip()
 
-        for phone in phone_numbers:
-            if phone.strip():
-                logger.info(f"Sending SMS to {phone}: {message}")
-                message_response = client.messages.create(
-                    body=message,
-                    from_=TWILIO_PHONE_NUMBER,
-                    to=phone.strip()
-                )
-                logger.info(f"SMS sent successfully to {phone}. SID: {message_response.sid}")
+        # for phone in phone_numbers:
+        if phone_str:
+            logger.info(f"Sending SMS to {phone_str}: {message}")
+            message_response = client.messages.create(
+                body=message,
+                from_=TWILIO_PHONE_NUMBER,
+                to=phone_str.strip()
+            )
+            logger.info(f"SMS sent successfully to {phone_str}. SID: {message_response.sid}")
         
         return True
     except Exception as e:
         logger.error(f"Failed to send SMS: {e}")
         return False
+
+
+
+@shared_task
+def send_hardware_reminders():
+    """Send all hardware reminders that are due today."""
+    from django.utils import timezone
+    import pytz
+    from datetime import timedelta
+    from django.core.mail import send_mail
+    from django.conf import settings
+    import os
+    import logging
+    from .models import Reminder, ReminderHardware, Notification
+    
+    logger = logging.getLogger(__name__)
+    
+    # Initialize timezone
+    tz = pytz.timezone('Asia/Kolkata')
+    now = timezone.now().astimezone(tz)
+    today = now.date()
+    logger.info(f"=== Starting hardware reminder processing for {today} ===")
+
+    try:
+        # Initialize channel layer for WebSocket notifications
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+            channel_layer = get_channel_layer()
+        except Exception as e:
+            channel_layer = None
+            logger.warning(f"Channel layer not available: {str(e)}")
+
+        # Process due reminders
+        due_reminders = Reminder.objects.filter(
+            reminder_date=today,
+            reminder_status="pending",
+            reminderhardware__isnull=False  # Only hardware-related reminders
+        ).prefetch_related('reminderhardware_set__hardware__user')
+
+        logger.info(f"Found {due_reminders.count()} hardware reminders to process")
+        
+        for reminder in due_reminders:
+            try:
+                # Get associated hardware
+                hardware_reminder = reminder.reminderhardware_set.first()
+                if not hardware_reminder:
+                    continue
+                    
+                hardware = hardware_reminder.hardware
+                user = hardware.user
+                
+                logger.info(f"Processing hardware reminder ID: {reminder.id} for {hardware}")
+
+                # Determine reminder type and content
+                if hardware_reminder.reminder_type == 'warranty':
+                    subject = f"Warranty Expiry Reminder for {hardware}"
+                    message = f"""
+                    WARRANTY EXPIRY NOTICE
+                    ----------------------
+                    
+                    Hardware: {hardware.hardware_type} ({hardware.serial_number})
+                    Warranty Expiry Date: {hardware.warranty.warranty_expiry_date}
+                    Days Remaining: {(hardware.warranty.warranty_expiry_date - today).days}
+                    
+                    {reminder.custom_message or 'Please renew your warranty to avoid additional costs.'}
+                    """
+                elif hardware_reminder.reminder_type == 'service':
+                    subject = f"Service Due Reminder for {hardware}"
+                    message = f"""
+                    SERVICE DUE NOTICE
+                    ------------------
+                    
+                    Hardware: {hardware.hardware_type} ({hardware.serial_number})
+                    Next Service Date: {hardware.services.next_service_date}
+                    Days Remaining: {(hardware.services.next_service_date - today).days}
+                    
+                    {reminder.custom_message or 'Please schedule your service appointment.'}
+                    """
+                else:
+                    continue
+
+                # Send notifications
+                if reminder.notification_method in ['email', 'both']:
+                    send_mail(
+                        subject,
+                        message.strip(),
+                        settings.DEFAULT_FROM_EMAIL,
+                        [r.strip() for r in reminder.recipients.split(',')],
+                        # html_message=message
+                    )
+                
+                if reminder.notification_method in ['sms', 'both']:
+                    sms_message = f"{subject}: {message[:100]}..."
+                    send_sms_notification(os.getenv('TWILIO_DEFAULT_PHONE_NUMBER'), sms_message)
+
+                # Create in-app notification
+                notification = Notification.objects.create(
+                    user=user,
+                    hardware=hardware,
+                    title=subject,
+                    message=message,
+                    notification_type='hardware_reminder',
+                    scheduled_for=timezone.now()
+                )
+                
+                # Send WebSocket notification if available
+                if channel_layer is not None:
+                    try:
+                        async_to_sync(channel_layer.group_send)(
+                            f'notifications_{user.id}',
+                            {
+                                'type': 'send_notification',
+                                'content': {
+                                    'type': 'new_notification',
+                                    'notification': {
+                                        'id': notification.id,
+                                        'title': notification.title,
+                                        'message': notification.message,
+                                        'is_read': notification.is_read,
+                                        'created_at': notification.created_at.isoformat(),
+                                        'hardware_id': hardware.id
+                                    }
+                                }
+                            }
+                        )
+                    except Exception as e:
+                        logger.error(f"WebSocket notification failed: {str(e)}")
+
+                # Mark as sent
+                reminder.reminder_status = "sent"
+                reminder.save()
+
+                logger.info(f"Hardware reminder {reminder.id} processed successfully")
+                
+            except Exception as e:
+                logger.error(f"Failed to process hardware reminder {reminder.id}: {str(e)}")
+                reminder.reminder_status = "failed"
+                reminder.save()
+                
+    except Exception as e:
+        logger.error(f"Critical error in send_hardware_reminders task: {str(e)}")
+
+
+@shared_task
+def send_customer_reminders():
+    """Send all customer reminders that are due today."""
+    from django.utils import timezone
+    import pytz
+    from datetime import timedelta
+    from django.core.mail import send_mail
+    from django.conf import settings
+    import os
+    import logging
+    from .models import Reminder, ReminderCustomer, Notification
+    
+    logger = logging.getLogger(__name__)
+    
+    # Initialize timezone
+    tz = pytz.timezone('Asia/Kolkata')
+    now = timezone.now().astimezone(tz)
+    today = now.date()
+    logger.info(f"=== Starting customer reminder processing for {today} ===")
+
+    try:
+        # Initialize channel layer for WebSocket notifications
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+            channel_layer = get_channel_layer()
+        except Exception as e:
+            channel_layer = None
+            logger.warning(f"Channel layer not available: {str(e)}")
+
+        # Process due reminders
+        due_reminders = Reminder.objects.filter(
+            reminder_date=today,
+            reminder_status="pending",
+            remindercustomer__isnull=False  # Only customer-related reminders
+        ).prefetch_related('remindercustomer_set__customer__user')
+
+        logger.info(f"Found {due_reminders.count()} customer reminders to process")
+        
+        for reminder in due_reminders:
+            try:
+                # Get associated customer
+                customer_reminder = reminder.remindercustomer_set.first()
+                if not customer_reminder:
+                    continue
+                    
+                customer = customer_reminder.customer
+                user = customer.user
+                
+                logger.info(f"Processing customer reminder ID: {reminder.id} for {customer.customer_name}")
+
+                # Prepare notification content
+                subject = f"Contract End Date Reminder for {customer.customer_name}"
+                message = f"""
+                CONTRACT END DATE NOTICE
+                -----------------------
+                
+                Customer: {customer.customer_name}
+                Contract End Date: {customer.end_date}
+                Days Remaining: {(customer.end_date - today).days}
+                
+                {reminder.custom_message or 'Please review the contract renewal options.'}
+                """
+
+                # Send notifications
+                if reminder.notification_method in ['email', 'both']:
+                    send_mail(
+                        subject,
+                        message.strip(),
+                        settings.DEFAULT_FROM_EMAIL,
+                        [r.strip() for r in reminder.recipients.split(',')],
+                        html_message=message
+                    )
+                
+                if reminder.notification_method in ['sms', 'both']:
+                    sms_message = f"{subject}: {message[:100]}..."
+                    send_sms_notification(os.getenv('TWILIO_DEFAULT_PHONE_NUMBER'), sms_message)
+
+                # Create in-app notification
+                notification = Notification.objects.create(
+                    user=user,
+                    customer=customer,
+                    title=subject,
+                    message=message,
+                    notification_type='customer_reminder',
+                    scheduled_for=timezone.now()
+                )
+                
+                # Send WebSocket notification if available
+                if channel_layer is not None:
+                    try:
+                        async_to_sync(channel_layer.group_send)(
+                            f'notifications_{user.id}',
+                            {
+                                'type': 'send_notification',
+                                'content': {
+                                    'type': 'new_notification',
+                                    'notification': {
+                                        'id': notification.id,
+                                        'title': notification.title,
+                                        'message': notification.message,
+                                        'is_read': notification.is_read,
+                                        'created_at': notification.created_at.isoformat(),
+                                        'customer_id': customer.id
+                                    }
+                                }
+                            }
+                        )
+                    except Exception as e:
+                        logger.error(f"WebSocket notification failed: {str(e)}")
+
+                # Mark as sent
+                reminder.reminder_status = "sent"
+                reminder.save()
+
+                logger.info(f"Customer reminder {reminder.id} processed successfully")
+                
+            except Exception as e:
+                logger.error(f"Failed to process customer reminder {reminder.id}: {str(e)}")
+                reminder.reminder_status = "failed"
+                reminder.save()
+                
+    except Exception as e:
+        logger.error(f"Critical error in send_customer_reminders task: {str(e)}")
