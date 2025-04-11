@@ -2568,7 +2568,7 @@ class CustomerDetailView(generics.RetrieveUpdateDestroyAPIView):
         if serializer.is_valid():
             serializer.save()
             return Response(
-                {"message": "Customer updated successfully!", "customer": serializer.data},
+                {"message": "Customer updated successfully!", "status":status.HTTP_200_OK,"customer": serializer.data},
                 status=status.HTTP_200_OK
             )
         
