@@ -89,7 +89,7 @@ def setup_periodic_tasks():
     )
 
     schedule_6, _ = IntervalSchedule.objects.get_or_create(
-        every=5, period=IntervalSchedule.MINUTES
+        every=1, period=IntervalSchedule.HOURS
     )
     PeriodicTask.objects.update_or_create(
         name="subscription reminder",
@@ -102,7 +102,7 @@ def setup_periodic_tasks():
     )
 
     schedule_7, _ = IntervalSchedule.objects.get_or_create(
-        every=5, period=IntervalSchedule.MINUTES
+        every=1, period=IntervalSchedule.HOURS
     )
     PeriodicTask.objects.update_or_create(
         name="hardware reminder",
@@ -115,7 +115,7 @@ def setup_periodic_tasks():
     )
 
     schedule_8, _ = IntervalSchedule.objects.get_or_create(
-        every=5, period=IntervalSchedule.MINUTES
+        every=1, period=IntervalSchedule.HOURS
     )
     PeriodicTask.objects.update_or_create(
         name="customer reminder",

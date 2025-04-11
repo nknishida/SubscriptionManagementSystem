@@ -938,8 +938,9 @@ class SubscriptionCreateView(generics.CreateAPIView):
                 category = subscription.subscription_category
                 if category == "Software":
                     # Check for existing software subscription
-                    if SoftwareSubscriptions.objects.filter(subscription=subscription).exists():
-                        raise ValidationError("A software subscription with this ID already exists.")
+                    # if SoftwareSubscriptions.objects.filter(subscription=subscription).exists():
+                    # if SoftwareSubscriptions.objects.filter(software_id=additional_fields.get("software_id")).exists():
+                    #     raise ValidationError("A software subscription with this ID already exists.")
                     SoftwareSubscriptions.objects.create(subscription=subscription, **additional_fields)
                 elif category == "Billing":
                     utility_instance = Utilities(subscription=subscription, **additional_fields)
