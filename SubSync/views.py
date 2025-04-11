@@ -314,7 +314,7 @@ class CreateUserAPIView(APIView):
                             f"Username: {username}\n"
                             f"Password: {random_password}\n\n"
                             f"Please change your password after logging in.",
-                    from_email='subsyncproject@gmail.com',  # Replace with your actual email
+                    from_email=settings.DEFAULT_FROM_EMAIL,  # Replace with your actual email
                     recipient_list=[email],
                     fail_silently=False,
                 )
