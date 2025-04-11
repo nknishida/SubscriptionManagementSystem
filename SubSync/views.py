@@ -3357,35 +3357,35 @@ class YearlyHardwareCostBreakdownAPIView(APIView):
                 })
 
             # ----- Handle Maintenance -----
-            maintenance_services = hardware.services.all()
-            for service in maintenance_services:
-                if service.last_service_date:
-                    service_year = service.last_service_date.year
-                    service_cost = service.service_cost or 0
+            service = hardware.services
+            # for service in maintenance_services:
+            if service.last_service_date:
+                service_year = service.last_service_date.year
+                service_cost = service.service_cost or 0
 
-                    year_wise_data[service_year]["total_maintenance_cost"] += service_cost
-                    year_wise_data[service_year]["total_hardware_cost"] += service_cost
+                year_wise_data[service_year]["total_maintenance_cost"] += service_cost
+                year_wise_data[service_year]["total_hardware_cost"] += service_cost
 
-                    # Try to match existing entry for same hardware in that year
-                    found = False
-                    for item in year_wise_data[service_year]["hardware_cost_breakdown"]:
-                        if item["hardware_id"] == hardware.id:
-                            item["maintenance_cost"] += service_cost
-                            item["total_cost"] += service_cost
-                            found = True
-                            break
+                # Try to match existing entry for same hardware in that year
+                found = False
+                for item in year_wise_data[service_year]["hardware_cost_breakdown"]:
+                    if item["hardware_id"] == hardware.id:
+                        item["maintenance_cost"] += service_cost
+                        item["total_cost"] += service_cost
+                        found = True
+                        break
 
-                    if not found:
-                        year_wise_data[service_year]["hardware_cost_breakdown"].append({
-                            "hardware_id": hardware.id,
-                            "hardware_type": hardware.hardware_type,
-                            "serial_number": hardware.serial_number,
-                            "manufacturer": hardware.manufacturer,
-                            "model_number": hardware.model_number,
-                            "purchase_cost": 0,
-                            "maintenance_cost": service_cost,
-                            "total_cost": service_cost,
-                        })
+                if not found:
+                    year_wise_data[service_year]["hardware_cost_breakdown"].append({
+                        "hardware_id": hardware.id,
+                        "hardware_type": hardware.hardware_type,
+                        "serial_number": hardware.serial_number,
+                        "manufacturer": hardware.manufacturer,
+                        "model_number": hardware.model_number,
+                        "purchase_cost": 0,
+                        "maintenance_cost": service_cost,
+                        "total_cost": service_cost,
+                    })
 
         return Response(year_wise_data)
 
