@@ -930,70 +930,70 @@ class SubscriptionCreateView(generics.CreateAPIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            with transaction.atomic():
-                subscription = serializer.save()
-                print("Subscription created:", subscription)
+            # with transaction.atomic():
+            subscription = serializer.save()
+            print("Subscription created:", subscription)
 
-                # Handle category-specific data
-                category = subscription.subscription_category
-                if category == "Software":
-                    # Check for existing software subscription
-                    # if SoftwareSubscriptions.objects.filter(subscription=subscription).exists():
-                    # if SoftwareSubscriptions.objects.filter(software_id=additional_fields.get("software_id")).exists():
-                    #     raise ValidationError("A software subscription with this ID already exists.")
-                    SoftwareSubscriptions.objects.create(subscription=subscription, **additional_fields)
-                elif category == "Billing":
-                    utility_instance = Utilities(subscription=subscription, **additional_fields)
-                    utility_instance.clean()
-                    utility_instance.save()
-                elif category == "Domain":
-                    Domain.objects.create(subscription=subscription, **additional_fields)
-                elif category == "Server":
-                    Servers.objects.create(subscription=subscription, **additional_fields)
+            # Handle category-specific data
+            category = subscription.subscription_category
+            if category == "Software":
+                # Check for existing software subscription
+                # if SoftwareSubscriptions.objects.filter(subscription=subscription).exists():
+                # if SoftwareSubscriptions.objects.filter(software_id=additional_fields.get("software_id")).exists():
+                #     raise ValidationError("A software subscription with this ID already exists.")
+                SoftwareSubscriptions.objects.create(subscription=subscription, **additional_fields)
+            elif category == "Billing":
+                utility_instance = Utilities(subscription=subscription, **additional_fields)
+                # utility_instance.clean()
+                utility_instance.save()
+            elif category == "Domain":
+                Domain.objects.create(subscription=subscription, **additional_fields)
+            elif category == "Server":
+                Servers.objects.create(subscription=subscription, **additional_fields)
 
-                # Apply default reminder settings if none provided
-                if not any(reminder_data.values()):
-                    if subscription.billing_cycle in ["weekly", "monthly"]:
-                        reminder_data["reminder_days_before"] = 3
-                    else:
-                        reminder_data["reminder_months_before"] = 1
-                        reminder_data["reminder_day_of_month"] = 1
+            # Apply default reminder settings if none provided
+            if not any(reminder_data.values()):
+                if subscription.billing_cycle in ["weekly", "monthly"]:
+                    reminder_data["reminder_days_before"] = 3
+                else:
+                    reminder_data["reminder_months_before"] = 1
+                    reminder_data["reminder_day_of_month"] = 1
 
-                    reminder_data.update({
-                        "notification_method": "email",
-                        "reminder_type": "renewal",
-                        "recipients": request.user.email,
-                        "custom_message": "Your subscription is due soon. Please renew it in time."
-                    })
+                reminder_data.update({
+                    "notification_method": "email",
+                    "reminder_type": "renewal",
+                    "recipients": request.user.email,
+                    "custom_message": "Your subscription is due soon. Please renew it in time."
+                })
 
-                # Create Reminder if data exists
-                if any(reminder_data.values()):
-                    reminder = Reminder.objects.create(
-                        reminder_days_before=reminder_data.get("reminder_days_before"),
-                        reminder_months_before=reminder_data.get("reminder_months_before"),
-                        reminder_day_of_month=reminder_data.get("reminder_day_of_month"),
-                        optional_days_before=reminder_data.get("optional_days_before"),
-                        notification_method=reminder_data.get("notification_method"),
-                        recipients=reminder_data.get("recipients"),
-                        custom_message=reminder_data.get("custom_message"),
-                        reminder_type="renewal",
-                    )
+            # Create Reminder if data exists
+            if any(reminder_data.values()):
+                reminder = Reminder.objects.create(
+                    reminder_days_before=reminder_data.get("reminder_days_before"),
+                    reminder_months_before=reminder_data.get("reminder_months_before"),
+                    reminder_day_of_month=reminder_data.get("reminder_day_of_month"),
+                    optional_days_before=reminder_data.get("optional_days_before"),
+                    notification_method=reminder_data.get("notification_method"),
+                    recipients=reminder_data.get("recipients"),
+                    custom_message=reminder_data.get("custom_message"),
+                    reminder_type="renewal",
+                )
 
-                    ReminderSubscription.objects.create(reminder=reminder, subscription=subscription)
+                ReminderSubscription.objects.create(reminder=reminder, subscription=subscription)
 
-                    reminder_dates = reminder.calculate_all_reminder_dates(subscription)
-                    print("Reminder Dates:", reminder_dates)
+                reminder_dates = reminder.calculate_all_reminder_dates(subscription)
+                print("Reminder Dates:", reminder_dates)
 
-                    if reminder_dates:
-                        reminder.reminder_date = reminder_dates[0]
-                        reminder.save()
-                        print("Reminder Date Saved:", reminder.reminder_date)
+                if reminder_dates:
+                    reminder.reminder_date = reminder_dates[0]
+                    reminder.save()
+                    print("Reminder Date Saved:", reminder.reminder_date)
 
-                return Response({
-                    'message':"Subscription Added Succussfully",
-                    'status': status.HTTP_201_CREATED,
-                    'data': serializer.data
-                }, status=status.HTTP_201_CREATED)
+            return Response({
+                'message':"Subscription Added Succussfully",
+                'status': status.HTTP_201_CREATED,
+                'data': serializer.data
+            }, status=status.HTTP_201_CREATED)
 
         except ValidationError as e:
             print(f"Validation Error: {str(e)}")
