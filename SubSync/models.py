@@ -645,6 +645,7 @@ class Reminder(models.Model):
 
         ('server break down', 'Server Break Down'),
         ('server_expiry', 'Server Expiry'),
+        ('customer_expiry', 'Customer Expiry'),
     ]
     REMINDER_STATUS_CHOICES = [
         ('pending', 'Pending'),
@@ -1137,9 +1138,18 @@ class Resource(models.Model):
     def save(self, *args, **kwargs):
         now = timezone.now().date()
         """Override save method to update status , payment status,and next payment date before saving."""
+
+        if not self.last_payment_date and self.provisioned_date:
+            self.last_payment_date = self.provisioned_date
+
         
-        if not self.next_payment_date or self.next_payment_date < now:
-            self.next_payment_date = self.calculate_next_payment_date(force_update=True)
+        # if not self.next_payment_date or self.next_payment_date < now:
+        #     self.next_payment_date = self.calculate_next_payment_date(force_update=True)
+        if not self.next_payment_date or (self.last_payment_date and 
+                                     (not self.next_payment_date or 
+                                      self.next_payment_date <= timezone.now().date())):
+            self.calculate_next_payment_date(force_update=True)
+
 
         super().save(*args, **kwargs)
 

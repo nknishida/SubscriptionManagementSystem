@@ -375,7 +375,7 @@ from django.utils.timezone import now
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from .models import Computer, Customer, ReminderHardware, Subscription
+from .models import Computer, Customer, ReminderCustomer, ReminderHardware, Subscription
 
 class SubscriptionCountView(APIView):
     """Fetch the count of active and expired subscriptions."""
@@ -2467,6 +2467,48 @@ class CustomerAPIView(APIView):
         
         print(f"❌ Validation failed: {serializer.errors}") 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        # if not serializer.is_valid():
+        #     print(f"❌ Validation failed: {serializer.errors}") 
+        #     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        # try:
+        #     with transaction.atomic():
+        #         # Create customer
+        #         customer = serializer.save()
+        #         print(f" Customer saved successfully: {customer}")
+        #         reminder = Reminder.objects.create(
+        #             reminder_days_before=7,
+        #             reminder_months_before=1,
+        #             reminder_day_of_month=1,
+        #             # optional_days_before=reminder_data.get("optional_days_before"),
+        #             notification_method="both",
+        #             recipients=request.user.email,
+        #             custom_message="Your subscription is about to expire. Please renew it.",
+        #             reminder_type="customer expiry",
+        #         )
+
+        #         ReminderCustomer.objects.create(reminder=reminder, customer=customer)
+
+        #         reminder_dates = reminder.calculate_all_reminder_dates(customer)
+        #         print("Reminder Dates:", reminder_dates)
+
+        #         if reminder_dates:
+        #             reminder.reminder_date = reminder_dates[0]
+        #             reminder.save()
+        #             print("Reminder Date Saved:", reminder.reminder_date)
+
+        #     return Response({
+        #         "message": "Customer added successfully",
+        #         "customer": CustomerSerializer(customer).data,
+        #         "status": status.HTTP_201_CREATED
+        #     }, status=status.HTTP_201_CREATED)
+
+        # except Exception as e:
+        #     print(f"❌ Error in customer creation: {str(e)}")
+        #     return Response(
+        #         {"message": "Failed to create customer", "error": str(e)},
+        #         status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        #     )
     
 class ServerUsageView(APIView):
     def get(self, request):

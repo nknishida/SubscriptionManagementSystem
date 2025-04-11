@@ -1057,11 +1057,16 @@ class ResourceAddSerializer(serializers.ModelSerializer):
         """
         Custom validation to set user and check server capacity.
         """
+        if data is None:
+            raise serializers.ValidationError("Invalid input data")
+        
         request = self.context.get('request')
+        if not request:
+            raise serializers.ValidationError("Request context is missing")
 
         # Set the user from request
-        if request and request.user:
-            data["user"] = request.user
+        # if request and request.user:
+        #     data["user"] = request.user
             
         data["status"] = "Active"
 
@@ -1095,6 +1100,7 @@ class ResourceAddSerializer(serializers.ModelSerializer):
             "hosting_location": "server",
             "hosting_type": "hosting_type",
             "last_updated_date": "last_updated_date",
+            "last_updated_date": "last_payment_date",
             "provisioned_date": "provisioned_date",
             "resource_cost": "resource_cost",
             "resource_name": "resource_name",
@@ -1151,10 +1157,10 @@ class ResourceViewSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
 
         # Set the user from request
-        if request and request.user:
-            data["user"] = request.user
+        # if request and request.user:
+        #     data["user"] = request.user
             
-        data["status"] = "Active"
+        # data["status"] = "Active"
 
         # Convert hosting_location_name to server ID
         hosting_location_name = self.initial_data.get("hosting_location_name")  # Frontend field
@@ -1207,7 +1213,7 @@ class ResourceViewSerializer(serializers.ModelSerializer):
             except Servers.DoesNotExist:
                 raise serializers.ValidationError({"server": "Invalid server name."})
 
-            return super().to_internal_value(converted_data)
+        return super().to_internal_value(converted_data)
 
     def _convert_to_gb(self, capacity):
         """ Helper function to convert capacity to GB if necessary. """
