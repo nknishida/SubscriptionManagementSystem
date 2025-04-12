@@ -1,7 +1,12 @@
 from rest_framework import serializers
-# from django.contrib.auth import get_user_model
-# User = get_user_model()
-from .models import AirConditioner, Computer, Customer, HardwareService, NetworkDevice, Notification, PortableDevice, Printer, Provider, Purchase, Resource, Scanner, Subscription, User, SoftwareSubscriptions, Utilities, Domain, Servers, Hardware, Warranty
+from .models import Reminder,AirConditioner, Computer, Customer, HardwareService, NetworkDevice, Notification, PortableDevice, Printer, Provider, Purchase, Resource, Scanner, Subscription, User, SoftwareSubscriptions, Utilities, Domain, Servers, Hardware, Warranty
+from django.db import transaction
+from django.core.validators import validate_email
+from simple_history.models import HistoricalRecords
+import re  # Regular Expressions for extracting numbers
+
+import logging
+logger = logging.getLogger(__name__)
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -17,9 +22,6 @@ class UserSerializer(serializers.ModelSerializer):
         user.set_password(validated_data['password'])  #  Hash the password before saving
         user.save()
         return user
-
-from rest_framework import serializers
-from .models import User
 
 class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
@@ -88,7 +90,6 @@ class ProviderSerializer(serializers.ModelSerializer):
         model = Provider
         fields = [ 'id','providerName', 'providerContact', 'providerEmail', 'websiteLink']
                 #   'category']
-        # fields=['all']
 
     def validate_provider_name(self, value):
         """Ensure provider name is unique and not empty."""
@@ -112,7 +113,6 @@ class ProviderSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Phone number must contain only digits and be between 7 to 15 characters long.")
         return value
     
-
     # def validate_providerEmail(self, value):
     #     """Check if the email is already used"""
     #     if Provider.objects.filter(contact_email=value).exists():
@@ -129,34 +129,6 @@ class SubscriptionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Subscription
         fields = '__all__'
-
-# class SubscriptionFilterSerializer(serializers.ModelSerializer):
-#     provider = serializers.PrimaryKeyRelatedField(queryset=Provider.objects.all())
-
-#     software_name = serializers.CharField(source="software_detail.software_name", read_only=True)
-#     server_name = serializers.CharField(source="server.server_name", read_only=True)
-#     domain_name = serializers.CharField(source="domain.domain_name", read_only=True)
-#     utility_name = serializers.CharField(source="billing.utility_type", read_only=True)
-
-#     class Meta:
-#         model = Subscription
-#         fields = [
-#             "id",
-#             "subscription_category",
-#             "provider",
-#             "start_date",
-#             "end_date",
-#             "billing_cycle",
-#             "cost",
-#             "payment_status",
-#             "next_payment_date",
-#             "status",
-#             "auto_renewal",
-#             "software_name",
-#             "server_name",
-#             "domain_name",
-#             "utility_name",
-#         ]
 
 class SoftwareSubscriptionSerializer(serializers.ModelSerializer):
     class Meta:
@@ -202,33 +174,6 @@ class ServerSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("This server name is already in use.")
         return value
 
-# class SubscriptionDetailSerializer(serializers.ModelSerializer):
-#     # provider = serializers.PrimaryKeyRelatedField(queryset=Provider.objects.all())
-#     provider = ProviderSerializer(read_only=True)
-#     software_detail = SoftwareSubscriptionSerializer(read_only=True)
-#     billing = UtilitySerializer(read_only=True)
-#     domain = DomainSerializer(read_only=True)
-#     server = ServerSerializer(read_only=True)
-
-#     class Meta:
-#         model = Subscription
-#         fields = [
-#             "id",
-#             "subscription_category",
-#             "provider",
-#             "start_date",
-#             # "end_date",
-#             "billing_cycle",
-#             "cost",
-#             "payment_status",
-#             "next_payment_date",
-#             "status",
-#             "auto_renewal",
-#             "software_detail",
-#             "billing",
-#             "domain",
-#             "server",
-#         ]
 class SubscriptionDetailSerializer(serializers.ModelSerializer):
     providerid = serializers.IntegerField(source="provider.id", read_only=True)
     providerName = serializers.CharField(source="provider.provider_name", read_only=True)
@@ -415,18 +360,6 @@ class SubscriptionUpdateSerializer(serializers.ModelSerializer):
         # Update main model
         instance = super().update(instance, validated_data)
 
-        # Update related models
-        # if software_data and hasattr(instance, 'software_detail'):
-        #         self._update_related_model(instance.software_detail, software_data)
-
-        # if billing_data and hasattr(instance, 'billing'):
-        #         self._update_related_model(instance.billing, billing_data)
-
-        # if domain_data and hasattr(instance, 'domain'):
-        #     self._update_related_model(instance.domain, domain_data)
-
-        # if server_data and hasattr(instance, 'server'):
-        #     self._update_related_model(instance.server, server_data)
         try:
             if software_data is not None and hasattr(instance, 'software_detail'):
                 self._update_related_model(instance.software_detail, software_data)
@@ -569,14 +502,6 @@ class AirConditionerSerializer(serializers.ModelSerializer):
             'hardware': {'required': False}  # Allow hardware to be assigned later
         }
 
-# class HardwareServerSerializer(serializers.ModelSerializer):
-#     class Meta:
-#         model = HardwareServers
-#         fields = '__all__'
-#         extra_kwargs = {
-#             'hardware': {'required': False}  # Allow hardware to be assigned later
-#         }
-
 class PrinterSerializer(serializers.ModelSerializer):
     class Meta:
         model = Printer
@@ -594,11 +519,6 @@ class ScannerSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'hardware': {'required': False}  # Allow hardware to be assigned later
         }
-
-import logging
-logger = logging.getLogger(__name__)
-from django.db import transaction
-from django.core.validators import validate_email
 
 class HardwareSerializer(serializers.ModelSerializer):
     purchase = PurchaseSerializer(required=False)
@@ -750,22 +670,7 @@ class HardwareSerializer(serializers.ModelSerializer):
         except:
             raise serializers.ValidationError("Invalid email format for recipients.")
         return value
-    # def validate_services(self, value):
-    #     """Ensure service dates are valid."""
-    #     for service in value:
-    #         if service.get("last_service_date") and service.get("next_service_date"):
-    #             if service["last_service_date"] > service["next_service_date"]:
-    #                 raise serializers.ValidationError("Next service date must be after last service date.")
-    #     return value
-    # def validate_services(self, value):
-    #     """Ensure service dates are valid."""
-    #     if value and isinstance(value, dict):  # Check if it's a dictionary
-    #         if value.get("last_service_date") and value.get("next_service_date"):
-    #             if value["last_service_date"] > value["next_service_date"]:
-    #                 raise serializers.ValidationError(
-    #                     "Next service date must be after last service date."
-    #                 )
-    #     return value
+    
     def validate_services(self, value):
         """Ensure service dates are valid."""
         if value:  # value is now a single dict
@@ -807,53 +712,52 @@ class HardwareSerializer(serializers.ModelSerializer):
                         Purchase.objects.create(hardware=instance, **purchase_data)
                 if warranty_data and hasattr(instance, 'warranty'):
                     self._update_related_model(instance.warranty, warranty_data)
-                # elif warranty_data:
-                #     Warranty.objects.create(hardware=instance, **warranty_data)
+                elif warranty_data:
+                    Warranty.objects.create(hardware=instance, **warranty_data)
                 
                 if services_data is not None:
                     service_instance = getattr(instance, 'services', None)
                     if service_instance:
                         self._update_related_model(service_instance, services_data)
-                    # else:
-                    #     HardwareService.objects.create(hardware=instance, **services_data)
-
+                    else:
+                        HardwareService.objects.create(hardware=instance, **services_data)
 
                 # Update hardware type specific models
                 if instance.hardware_type in ['Laptop', 'Desktop']:
                     if computer_data and hasattr(instance, 'computer'):
                         self._update_related_model(instance.computer, computer_data)
-                    # elif computer_data:
-                    #     Computer.objects.create(hardware=instance, **computer_data)
+                    elif computer_data:
+                        Computer.objects.create(hardware=instance, **computer_data)
             
                 elif instance.hardware_type in ['Mobile Phone', 'Tablet']:
                     if portable_device_data and hasattr(instance, 'portable_device'):
                         self._update_related_model(instance.portable_device, portable_device_data)
-                    # elif portable_device_data:
-                    #     PortableDevice.objects.create(hardware=instance, **portable_device_data)
+                    elif portable_device_data:
+                        PortableDevice.objects.create(hardware=instance, **portable_device_data)
                 
                 elif instance.hardware_type == 'Network Device':
                     if network_device_data and hasattr(instance, 'network_device'):
                         self._update_related_model(instance.network_device, network_device_data)
-                    # elif network_device_data:
-                    #     NetworkDevice.objects.create(hardware=instance, **network_device_data)
+                    elif network_device_data:
+                        NetworkDevice.objects.create(hardware=instance, **network_device_data)
                 
                 elif instance.hardware_type == 'Air Conditioner':
                     if air_conditioner_data and hasattr(instance, 'air_conditioner'):
                         self._update_related_model(instance.air_conditioner, air_conditioner_data)
-                    # elif air_conditioner_data:
-                    #     AirConditioner.objects.create(hardware=instance, **air_conditioner_data)
+                    elif air_conditioner_data:
+                        AirConditioner.objects.create(hardware=instance, **air_conditioner_data)
                 
                 elif instance.hardware_type == 'Printer':
                     if printer_data and hasattr(instance, 'printer'):
                         self._update_related_model(instance.printer, printer_data)
-                    # elif printer_data:
-                    #     Printer.objects.create(hardware=instance, **printer_data)
+                    elif printer_data:
+                        Printer.objects.create(hardware=instance, **printer_data)
                 
                 elif instance.hardware_type == 'Scanner':
                     if scanner_data and hasattr(instance, 'scanner'):
                         self._update_related_model(instance.scanner, scanner_data)
-                    # elif scanner_data:
-                    #     Scanner.objects.create(hardware=instance, **scanner_data)
+                    elif scanner_data:
+                        Scanner.objects.create(hardware=instance, **scanner_data)
 
                 return instance
         except Exception as e:
@@ -869,77 +773,6 @@ class HardwareSerializer(serializers.ModelSerializer):
             if value is not None:  # Only update non-null values
                 setattr(model_instance, attr, value)
         model_instance.save()
-    
-# class HardwareSerializer(serializers.ModelSerializer):
-#     warranty = WarrantySerializer(required=False)
-#     purchase = PurchaseSerializer(required=False)
-#     service = HardwareServiceSerializer(required=False)
-
-#     class Meta:
-#         model = Hardware
-#         fields = '__all__'
-#         extra_kwargs = {'user': {'read_only': True}}
-
-#     def create(self, validated_data):
-#         """Create Hardware first, then assign its ID to related models"""
-
-#         user = validated_data.pop('user', None)
-#         if user is None:
-#             raise serializers.ValidationError({"user": "User is required."})
-
-#         # user = request.user if request else None
-
-#         # if not user or not user.is_authenticated:
-#         #     raise serializers.ValidationError({"user": ["Authentication required."]})
-
-#         # Extract nested data
-#         warranty_data = validated_data.pop('warranty', None)
-#         purchase_data = validated_data.pop('purchase', None)
-#         service_data = validated_data.pop('service', None)
-
-#         # Ensure unique serial number
-#         if Hardware.objects.filter(serial_number=validated_data.get('serial_number')).exists():
-#             raise serializers.ValidationError({"serial_number": ["A hardware with this serial number already exists."]})
-
-#         # Create Hardware
-#         hardware = Hardware.objects.create(user=user,**validated_data)
-
-#         # Assign Foreign Key hardware to related tables
-#         if warranty_data:
-#             Warranty.objects.create(hardware=hardware, **warranty_data)
-#         if purchase_data:
-#             Purchase.objects.create(hardware=hardware, **purchase_data)
-#         if service_data:
-#             HardwareService.objects.create(hardware=hardware, **service_data)
-
-#         return hardware
-    
-#     def update(self, instance, validated_data):
-#         # Update Hardware fields
-#         warranty_data = validated_data.pop('warranty', None)
-#         purchase_data = validated_data.pop('purchase', None)
-#         service_data = validated_data.pop('service', None)
-
-#         for attr, value in validated_data.items():
-#             setattr(instance, attr, value)
-#         instance.save()
-
-#         # Handle Warranty Update
-#         if warranty_data:
-#             warranty, _ = Warranty.objects.update_or_create(hardware=instance, defaults=warranty_data)
-
-#         # Handle Purchase Update
-#         if purchase_data:
-#             purchase, _ = Purchase.objects.update_or_create(hardware=instance, defaults=purchase_data)
-
-#         # Handle Service Update
-#         if service_data:
-#             service, _ = HardwareService.objects.update_or_create(hardware=instance, defaults=service_data)
-
-#         return instance
-    
-from rest_framework import serializers
-from .models import Reminder
 
 class ReminderSerializer(serializers.ModelSerializer):
     class Meta:
@@ -973,74 +806,10 @@ class ResourceNameSerializer(serializers.ModelSerializer):
         model = Resource
         fields = ['id','resource_name']
 
-
-# class ResourceSerializer(serializers.ModelSerializer):
-#     class Meta:
-#         model = Resource
-#         fields = '__all__' 
-#         extra_kwargs = {
-#             'server': {'required': False} ,
-#              'user': {'required': False} 
-#         }
-    
-#     def validate(self, data):
-#         """
-#         Custom validation to set user and map hosting_location_name to server ID.
-#         """
-#         request = self.context.get('request')
-
-#         # Set the user from request
-#         if request and request.user:
-#             data["user"] = request.user
-            
-#         data["status"] = "Active" 
-        
-#         # Convert hosting_location_name to server ID
-#         hosting_location_name = self.initial_data.get("hosting_location_name")  # Frontend field
-#         if hosting_location_name:
-#             try:
-#                 server = Servers.objects.get(name=hosting_location_name)
-#                 data["server"] = server
-#             except Servers.DoesNotExist:
-#                 raise serializers.ValidationError({"hosting_location": "Invalid server name."})
-
-#         return data
-    
-#     def to_internal_value(self, data):
-#         # Mapping frontend fields to backend fields
-#         field_mapping = {
-#             "billing_cycle": "billing_cycle",
-#             "hosting_location": "server",
-#             "hosting_type": "hosting_type",
-#             "last_updated_date": "last_updated_date",
-#             "provisioned_date": "provisioned_date",
-#             "resource_cost": "resource_cost",
-#             "resource_name": "resource_name",
-#             "resource_type": "resource_type",
-#             "storage_capacity": "storage_capacity",
-#             # "hosting_location_name": "hosting_location_name",
-#             # "user": "user"
-#         }
-
-#         # Convert frontend field names to backend field names
-#         converted_data = {backend_key: data.get(frontend_key) for frontend_key, backend_key in field_mapping.items() if frontend_key in data}
-
-#         # Convert hosting_location (name) to server (ID)
-#         hosting_location_name = data.get("hosting_location")
-#         if hosting_location_name:
-#             try:
-#                 server = Servers.objects.get(server_name=hosting_location_name)  # Convert name to ID
-#                 converted_data["server"] = server.id
-#             except Servers.DoesNotExist:
-#                 raise serializers.ValidationError({"server": "Invalid server name."})
-
-#             return super().to_internal_value(converted_data)
-
 class CustomerBasicSerializer(serializers.ModelSerializer):
     class Meta:
         model = Customer
         fields= "__all__"
-        # fields = ['id', 'customer_name', 'customer_phone', 'customer_email', 'status']
 
 class ResourceAddSerializer(serializers.ModelSerializer):
     # customer = CustomerBasicSerializer(read_only=True)
@@ -1063,10 +832,6 @@ class ResourceAddSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         if not request:
             raise serializers.ValidationError("Request context is missing")
-
-        # Set the user from request
-        # if request and request.user:
-        #     data["user"] = request.user
             
         data["status"] = "Active"
 
@@ -1155,12 +920,6 @@ class ResourceViewSerializer(serializers.ModelSerializer):
         Custom validation to set user and check server capacity.
         """
         request = self.context.get('request')
-
-        # Set the user from request
-        # if request and request.user:
-        #     data["user"] = request.user
-            
-        # data["status"] = "Active"
 
         # Convert hosting_location_name to server ID
         hosting_location_name = self.initial_data.get("hosting_location_name")  # Frontend field
@@ -1271,20 +1030,6 @@ class CustomerSerializer(serializers.ModelSerializer):
     cost = serializers.DecimalField(max_digits=10, decimal_places=2)
     resource_id = serializers.IntegerField(write_only=True, required=False)
     resources = ResourceBasicSerializer(many=True,read_only=True)
-    # resourceid = serializers.IntegerField(source='resource.id', read_only=True)
-    # resource_name = serializers.CharField(source='resource.resource_name', read_only=True)
-    # resource_type = serializers.CharField(source='resource.resource_type', read_only=True)
-    # resource_status = serializers.CharField(source='resource.status', read_only=True)
-    # resource_billing_cycle = serializers.CharField(source='resource.billing_cycle', read_only=True)
-    # resource_cost = serializers.DecimalField(source='resource.resource_cost', max_digits=10, decimal_places=2, read_only=True)
-    # storage_capacity = serializers.CharField(source='resource.storage_capacity', read_only=True)
-    # provisioned_date = serializers.DateField(source='resource.provisioned_date', read_only=True)
-    # next_payment_date = serializers.DateField(source='resource.next_payment_date', read_only=True)
-    # hosting_type = serializers.CharField(source='resource.hosting_type', read_only=True)
-    # server_name = serializers.CharField(source='resource.server.server_name', read_only=True)
-    # resource_created_at = serializers.DateTimeField(source='resource.created_at', format="%Y-%m-%dT%H:%M:%S%z", read_only=True)
-    # resource_updated_at = serializers.DateTimeField(source='resource.updated_at', format="%Y-%m-%dT%H:%M:%S%z", read_only=True)
-
     deleted_at = serializers.DateTimeField(format="%Y-%m-%dT%H:%M:%S%z", read_only=True)
     deleted_by_username = serializers.CharField(source='deleted_by.username', read_only=True)
 
@@ -1293,11 +1038,6 @@ class CustomerSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'customer_name', 'customer_phone', 'customer_email', 'status', "deleted_at","deleted_by_username",
             'paymentMethod', 'startDate', 'endDate', 'billingCycle', 'cost', 'user','resource_id','resources'
-             # Resource fields
-            # 'resourceid', 'resource_name', 'resource_type', 'resource_status',
-            # 'resource_billing_cycle', 'resource_cost', 'storage_capacity',
-            # 'provisioned_date', 'next_payment_date', 'hosting_type', 'server_name',
-            # 'resource_created_at', 'resource_updated_at'
         ]
 
     def create(self, validated_data):
@@ -1308,7 +1048,6 @@ class CustomerSerializer(serializers.ModelSerializer):
         customer = Customer.objects.create(**validated_data)
 
         # Assign resources to this customer
-        # Resource.objects.filter(id__in=resource_ids).update(customer=customer)
         if resource_id:
             try:
                 resource = Resource.objects.get(id=resource_id)
@@ -1326,110 +1065,6 @@ class CustomerSerializer(serializers.ModelSerializer):
                 )
             
         return customer
-    
-# class ServerUsageSerializer(serializers.ModelSerializer):
-#     used = serializers.SerializerMethodField()
-#     total = serializers.SerializerMethodField()
-#     percentage = serializers.SerializerMethodField()
-
-#     class Meta:
-#         model = Servers
-#         fields = ["server_name", "used", "total", "percentage"]
-
-#     def get_used(self, obj):
-#         """
-#         Calculate total used capacity by summing up resource storage capacities linked to this server.
-#         """
-#         resources = obj.server_resources.all()  # Fetch all resources linked to this server
-#         print(f"resources {resources}")
-#         total_used = 0
-
-#         for resource in resources:
-#             if resource.storage_capacity:
-#                 try:
-#                     total_used += int(resource.storage_capacity)  # Convert storage_capacity to int
-#                 except ValueError:
-#                     pass  # Ignore if the value is not a number
-        
-#         return total_used
-
-#     def get_total(self, obj):
-#         """
-#         Get the total server capacity.
-#         """
-#         try:
-#             return int(obj.server_capacity)  # Ensure it's an integer
-#         except ValueError:
-#             return 0
-
-#     def get_percentage(self, obj):
-#         """
-#         Calculate the usage percentage.
-#         """
-#         total = self.get_total(obj)
-#         used = self.get_used(obj)
-#         return round((used / total) * 100, 2) if total > 0 else 0
-
-import re  # Regular Expressions for extracting numbers
-
-# class ServerUsageSerializer(serializers.ModelSerializer):
-#     used = serializers.SerializerMethodField()
-#     total = serializers.SerializerMethodField()
-#     percentage = serializers.SerializerMethodField()
-
-#     class Meta:
-#         model = Servers
-#         fields = ["server_name", "used", "total", "percentage"]
-
-#     def get_used(self, obj):
-#         """Calculate total used capacity from related resources."""
-#         resources = obj.server_resources.all()
-#         print(f"Debug: Server {obj.server_name} -> Resources: {resources}")
-
-#         total_used = 0
-#         for resource in resources:
-#             if resource.storage_capacity:
-#                 try:
-#                     # Extract numeric value (e.g., "8TB" -> 8, "500GB" -> 500)
-#                     match = re.search(r'(\d+)', resource.storage_capacity)
-#                     if match:
-#                         value = int(match.group(1))  # Convert to integer
-#                         if "TB" in resource.storage_capacity.upper():
-#                             value *= 1024  # Convert TB to GB
-#                         total_used += value  # Add to total used
-#                     else:
-#                         print(f"Warning: Could not parse storage_capacity {resource.storage_capacity}")
-#                 except ValueError:
-#                     print(f"Warning: Invalid storage_capacity {resource.storage_capacity}")
-#                     pass  
-        
-#         return total_used
-
-#     def get_total(self, obj):
-#         """Extract and sanitize server_capacity."""
-#         try:
-#             # Extract numeric value (e.g., "2TB" -> 2000, "500GB" -> 500)
-#             match = re.search(r'(\d+)', obj.server_capacity)
-#             if match:
-#                 capacity_value = int(match.group(1))  
-#                 if "TB" in obj.server_capacity.upper():
-#                     capacity_value *= 1024  # Convert TB to GB
-#                 return capacity_value
-#             return 0
-#         except Exception as e:
-#             print(f"Error parsing server_capacity {obj.server_capacity}: {e}")
-#             return 0
-
-#     def get_percentage(self, obj):
-#         """Calculate the percentage usage safely."""
-#         total = self.get_total(obj)
-#         used = self.get_used(obj)
-#         # Prevent negative values
-#         if used > total:
-#             used = total
-
-#         percentage = round((used / total) * 100, 2) if total > 0 else 0
-#         return min(percentage, 100)
 
 class ServerUsageSerializer(serializers.ModelSerializer):
     used = serializers.SerializerMethodField()
@@ -1546,8 +1181,6 @@ class UserStatusUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['is_active']
-
-from simple_history.models import HistoricalRecords
 
 class SubscriptionHistorySerializer(serializers.ModelSerializer):
     user = serializers.CharField(source='history_user.username')

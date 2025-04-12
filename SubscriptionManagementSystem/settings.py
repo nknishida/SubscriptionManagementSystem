@@ -12,9 +12,11 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 
 # Import dj-database-url at the beginning of the file.
 import dj_database_url
-
 import logging
 from pathlib import Path
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -24,11 +26,6 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-from dotenv import load_dotenv
-load_dotenv()
-
-import os
-
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'fallback-secret-key')
 
 # SECURITY WARNING: don't run with debug turned on in production!
@@ -234,22 +231,7 @@ EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
-# from celery.schedules import crontab
-
-# CELERY_BEAT_SCHEDULE = {
-#     # 'send-reminder-emails': {
-#     #     'task': 'SubSync.tasks.send_reminder_email',
-#     #     'schedule': crontab(minute='*/1'),  # Run every minute for testing
-#     #     # 'args': (1,),  # Provide a valid reminder_id here
-#     # },
-#     'delete-old-recycle-bin-items': {
-#         'task': 'SubSync.tasks.delete_old_recycle_bin_items',
-#         'schedule': crontab(minute='*/1'),
-            # 'schedule': crontab(hour=9, minute=0),  # Run daily at 9 AM
-#     },
-# }
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
-
 CELERY_BROKER_URL = 'redis://localhost:6379/0'
 CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
 CELERY_ACCEPT_CONTENT = ['json']

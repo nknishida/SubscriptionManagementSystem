@@ -1,4 +1,3 @@
-from datetime import timedelta
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.utils.timezone import now
@@ -6,6 +5,12 @@ from dateutil.relativedelta import relativedelta  # For date calculations
 from django.core.exceptions import ValidationError
 from django.contrib.auth import get_user_model
 from simple_history.models import HistoricalRecords
+from django.core.validators import MinValueValidator, MaxValueValidator
+from django.utils import timezone
+from calendar import monthrange
+from datetime import timedelta, date
+import logging
+logger = logging.getLogger(__name__)
 
 
 class User(AbstractUser):
@@ -104,40 +109,6 @@ class Subscription(models.Model):
         self.deleted_by=None
         self.save(update_fields=['is_deleted', 'deleted_at','deleted_by'])
 
-    # def clean(self):
-        # if self.end_date and self.start_date and self.end_date < self.start_date:
-        #     raise ValidationError("End date cannot be earlier than the start date.")
-        
-    # def update_status(self):
-    #     """Update the subscription status based on !end date//next_payement_date and auto-renewal."""
-    #     today = now().date()
-
-    #     if self.is_deleted:
-    #         self.status = "Canceled"
-    #     # elif self.end_date and today > self.end_date:
-    #     #     self.status = "Inactive"
-    #     elif self.next_payment_date:
-    #         if today > self.next_payment_date:
-    #             if self.auto_renewal:
-    #                 self.status = "Active"
-    #                 # self.last_payment_date = self.next_payment_date or today
-    #                 # self.calculate_next_payment_date()
-    #             else:
-    #                 self.status = "Expired"
-    #         else:
-    #             self.status = "Active"
-
-    # def update_payment_status(self):
-    #     """Update payment status based on next payment date."""
-    #     today = now().date()
-        
-    #     if self.next_payment_date and today > self.next_payment_date:
-    #         self.payment_status = "Pending"
-    #     # elif self.payment_status == "pending":  # Ensure it doesn't auto-set to "Paid"
-    #     #     self.payment_status = "pending"
-    #     else:
-    #         self.payment_status = "Paid"  # You may need payment confirmation logic here
-
     def calculate_next_payment_date(self):
         """Calculate the next payment date based on !start_date //last_payment_date and billing_cycle."""
         if not self.start_date:
@@ -235,8 +206,6 @@ class Subscription(models.Model):
             # New object: first-time calculation
             self.next_payment_date = self.calculate_next_payment_date()
 
-        # self.update_status()
-        # self.update_payment_status()
         self.update_status_and_reminders()
         # if not self.next_payment_date:
         #     self.next_payment_date = self.calculate_next_payment_date()
@@ -267,9 +236,6 @@ class SoftwareSubscriptions(models.Model):
 
     def __str__(self):
         return f"Software Details for {self.subscription.id}"
-    
-from django.db import models
-from django.core.exceptions import ValidationError
 
 class Utilities(models.Model):
     subscription = models.OneToOneField('Subscription', on_delete=models.CASCADE, related_name='billing', unique=True)
@@ -313,17 +279,6 @@ class Domain(models.Model):
 
     history = HistoricalRecords()
     
-    # domain_transfer_status = models.CharField(
-    #     max_length=50,
-    #     choices=[
-    #         ('locked', 'Locked'),
-    #         ('unlocked', 'Unlocked'),
-    #         ('pending_transfer', 'Pending Transfer'),
-    #     ],
-    #     default='locked',
-    #     help_text="Current status of domain transfer"
-    # )
-
     def clean(self):
         """ Custom validation to prevent duplicate domain_name """
         if Domain.objects.filter(domain_name=self.domain_name).exclude(id=self.id).exists():
@@ -346,7 +301,6 @@ class Servers(models.Model):
     
     server_name = models.CharField(max_length=255,unique=True)
     server_type = models.CharField(max_length=50)
-    # server_capacity = models.PositiveIntegerField(default=0, help_text="Total resource capacity (e.g., CPU, RAM, storage).")
     server_capacity= models.CharField(max_length=255)
 
     history = HistoricalRecords()
@@ -362,9 +316,6 @@ class Servers(models.Model):
 
     def __str__(self):
         return self.server_name
-
-from django.utils.timezone import now
-from datetime import timedelta, date
 
 class Hardware(models.Model):
 
@@ -444,7 +395,6 @@ class Warranty(models.Model):
         ('Expiring Soon', 'Expiring Soon'),
         ('Expired', 'Expired'),
     ]
-
 
     hardware = models.OneToOneField(Hardware, on_delete=models.CASCADE, related_name='warranty')
     status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='Active')
@@ -591,18 +541,6 @@ class AirConditioner(models.Model):
     def __str__(self):
         return f"Air Conditioner: {self.hardware}"
     
-# class HardwareServers(models.Model):
-#     hardware = models.OneToOneField(Hardware, on_delete=models.CASCADE, related_name='server')
-    
-#     hardware_server_name = models.CharField(max_length=100)
-#     cpu = models.CharField(max_length=100)
-#     ram = models.CharField(max_length=100)
-#     storage_configuration = models.CharField(max_length=100)
-#     operating_system = models.CharField(max_length=100,blank=True, null=True)
-
-#     def __str__(self):
-#         return f"Server: {self.hardware}"
-    
 class Printer(models.Model):
     hardware = models.OneToOneField(Hardware, on_delete=models.CASCADE, related_name='printer')
     print_technology = models.CharField(max_length=100)
@@ -624,15 +562,6 @@ class Scanner(models.Model):
 
     def __str__(self):
         return f"Scanner: {self.hardware}"
-
-from django.db import models
-from django.core.validators import MinValueValidator, MaxValueValidator
-from django.utils import timezone
-from dateutil.relativedelta import relativedelta
-from datetime import timedelta
-from calendar import monthrange
-import logging
-logger = logging.getLogger(__name__)
 
 class Reminder(models.Model):
     REMINDER_TYPE_CHOICES = [
@@ -656,23 +585,9 @@ class Reminder(models.Model):
         ('email', 'Email'),
         ('sms', 'SMS'),
         # ('in-app', 'In-App'),
-        # ('all', 'All'),
         ('both', 'Both'),
     ]
-    # SUBSCRIPTION_CYCLE_CHOICES = [
-    #     ('weekly', 'Weekly'),
-    #     ('monthly', 'Monthly'),
-    #     ('quarterly', 'Quarterly'),
-    #     ('semi-annual', 'Semi-Annual'),
-    #     ('annual', 'Annual'),
-    #     ('biennial', 'Biennial'),
-    #     ('triennial', 'Triennial'),
-    # ]
-
-    # subscription_cycle = models.CharField(
-    #     max_length=20, choices=SUBSCRIPTION_CYCLE_CHOICES, default='monthly',
-    #     help_text="Defines the frequency of the subscription."
-    # )
+    
     reminder_days_before = models.IntegerField(
         blank=True, null=True, validators=[MinValueValidator(1)],
         help_text="For weekly/monthly cycles: How many days before to receive a reminder?"
@@ -716,65 +631,6 @@ class Reminder(models.Model):
         _, last_day = monthrange(year, month)
         return min(day, last_day)
 
-    # def calculate_all_reminder_dates(self, subscription):
-    #     """Calculate all reminder dates for a subscription."""
-    #     if not subscription.next_payment_date:
-    #         logger.error("No next_payment_date found for subscription")
-    #         return [] 
-
-    #     today = timezone.now().date()
-    #     reminder_dates = []
-
-    #     # Stop reminders if the subscription is paid
-    #     if subscription.payment_status == "Paid":
-    #         logger.info(f"Subscription ID {subscription.id} is paid. No reminders needed.")
-    #         return reminder_dates
-
-    #     # For weekly/monthly cycles
-    #     if subscription.billing_cycle in ['weekly', 'monthly']:
-    #         if self.reminder_days_before:
-    #             start_date = subscription.next_payment_date - timedelta(days=int(self.reminder_days_before))
-    #             current_date = start_date
-    #             while current_date < subscription.next_payment_date:
-    #                 if current_date >= today:
-    #                     reminder_dates.append(current_date)
-    #                 current_date += timedelta(days=1)
-
-    #     # For long-term cycles
-    #     elif subscription.billing_cycle in ['quarterly', 'semi-annual', 'annual', 'biennial', 'triennial']:
-    #         if self.reminder_months_before and self.reminder_day_of_month:
-    #             start_date = max(
-    #                 subscription.next_payment_date - relativedelta(months=self.reminder_months_before),
-    #                 today
-    #             )
-    #             start_date = start_date.replace(
-    #                 day=self.get_valid_day(start_date.year, start_date.month, self.reminder_day_of_month)
-    #             )
-    #             current_date = start_date
-    #             while current_date < subscription.next_payment_date:
-    #                 if current_date >= today:
-    #                     reminder_dates.append(current_date)
-    #                 current_date += relativedelta(months=1)
-
-    #     # Add optional_days_before reminder if present
-    #     if self.optional_days_before:
-    #         optional_reminder_date = subscription.next_payment_date - timedelta(days=self.optional_days_before)
-    #         current_date = optional_reminder_date
-    #         while current_date < subscription.next_payment_date:
-    #             if optional_reminder_date >= today:
-    #                 reminder_dates.append(optional_reminder_date)
-    #             current_date += timedelta(days=1)
-
-    #     # Overdue reminder logic (continue reminders if unpaid/expired)
-    #     if subscription.status == "Expired" or subscription.payment_status == "Unpaid":
-    #         overdue_reminder_date = subscription.next_payment_date + timedelta(days=1)
-    #         while overdue_reminder_date <= today:  # Keep generating overdue reminders
-    #             reminder_dates.append(overdue_reminder_date)
-    #             overdue_reminder_date += timedelta(days=3)  # Overdue reminders every 3 days (adjustable)
-
-    #     logger.info(f"Generated Reminder Dates(in models.py): {reminder_dates}")
-    #     return reminder_dates
-
     def calculate_all_reminder_dates(self, subscription):
         """Calculate all reminder dates for a subscription."""
         print("\n**********************************************models.py***************************************************************************************")
@@ -785,48 +641,6 @@ class Reminder(models.Model):
 
         today = timezone.now().date()
         reminder_dates = []
-
-        # is_first_reminder =  Reminder.objects.filter(
-        #     subscription_reminder__subscription=subscription,
-        #     reminder_status="sent"
-        # ).exists()
-        # print(is_first_reminder)
-    
-        # if is_first_reminder:
-        #     if hasattr(subscription, "next_payment_date") and subscription.next_payment_date:
-        #         # Pre-payment reminders
-        #         if subscription.billing_cycle in ['weekly', 'monthly'] and self.reminder_days_before:
-        #             start_date = subscription.next_payment_date - timedelta(days=int(self.reminder_days_before))
-        #             current_date = start_date
-        #             while current_date < subscription.next_payment_date:
-        #                 if current_date >= today:
-        #                     reminder_dates.append(current_date)
-        #                 current_date += timedelta(days=1)
-        #         elif hasattr(subscription, "billing_cycle") and subscription.billing_cycle in ['quarterly', 'semi-annual', 'annual', 'biennial', 'triennial']:
-        #             if self.reminder_months_before and self.reminder_day_of_month:
-        #                 start_date = max(
-        #                     subscription.next_payment_date - relativedelta(months=self.reminder_months_before),
-        #                     today
-        #                 )
-        #                 start_date = start_date.replace(
-        #                     day=self.get_valid_day(start_date.year, start_date.month, self.reminder_day_of_month)
-        #                 )
-        #                 current_date = start_date
-        #                 while current_date < subscription.next_payment_date:
-        #                     if current_date >= today:
-        #                         reminder_dates.append(current_date)
-        #                     current_date += relativedelta(months=1)
-
-        #         # Add optional_days_before reminder if present
-        #         if self.optional_days_before:
-        #             optional_reminder_date = subscription.next_payment_date - timedelta(days=self.optional_days_before)
-        #             current_date = optional_reminder_date
-        #             while current_date < subscription.next_payment_date:
-        #                     if optional_reminder_date >= today:
-        #                         reminder_dates.append(optional_reminder_date)
-        #                     current_date += timedelta(days=1)
-
-        #     return sorted(list(set(reminder_dates)))
 
         # Stop reminders if the subscription is paid
         if hasattr(subscription, "payment_status") and subscription.payment_status == "Paid":
@@ -1001,8 +815,6 @@ class Customer(models.Model):
             'triennial': relativedelta(years=3),
         }
 
-        # last_payement_date = self.start_date?
-        # next_payment_date = self.end_date?
         cycle_delta = cycle_mapping.get(self.billing_cycle, relativedelta())
 
         # If next_payment_date is not set, calculate it from !start_date//last_payment_date
@@ -1036,14 +848,6 @@ class ReminderCustomer(models.Model):
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE)
 
 class Resource(models.Model):
-    # RESOURCE_TYPE_CHOICES = [
-    #     ('database', 'Database'),
-    #     ('compute', 'Compute'),
-    #     ('storage', 'Storage'),
-    #     ('network', 'Network'),
-    #     ('website', 'Website'),
-    #     ('web_and_app_hosting', 'Web and App Hosting')  # Added to match frontend
-    # ]
     STATUS_CHOICES = [
         # ('available', 'Available'),
         # ('in_use', 'In Use'),
@@ -1052,12 +856,6 @@ class Resource(models.Model):
         ('Inactive', 'Inactive'),
         # ('pending', 'Pending'),
     ]
-    # BILLING_CYCLE_CHOICES = [
-    #     ('monthly', 'monthly'),
-    #     ('quarterly', 'quarterly'),
-    #     ('biannual', 'Biannual'),
-    #     ('annual', 'annual'),
-    # ]
 
     resource_name = models.CharField(max_length=100)
     resource_type = models.CharField(max_length=50)
@@ -1074,7 +872,6 @@ class Resource(models.Model):
 
     hosting_type = models.CharField(max_length=100, blank=True, null=True)
     # hosting_location_name= models.CharField(max_length=100, blank=True, null=True)
-
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1118,8 +915,6 @@ class Resource(models.Model):
             'triennial': relativedelta(years=3),
         }
 
-        # last_payement_date = self.start_date?
-        # next_payment_date = self.end_date?
         cycle_delta = cycle_mapping.get(self.billing_cycle, relativedelta())
 
         # If next_payment_date is not set, calculate it from !start_date//last_payment_date
@@ -1150,39 +945,11 @@ class Resource(models.Model):
                                       self.next_payment_date <= timezone.now().date())):
             self.calculate_next_payment_date(force_update=True)
 
-
         super().save(*args, **kwargs)
 
     def __str__(self):
         return self.resource_name
     
-# class CustomerResource(models.Model):
-#     PAYMENT_STATUS_CHOICES = [
-#         ('paid', 'Paid'),
-#         ('unpaid', 'Unpaid'),
-#         ('pending', 'Pending'),
-#     ]
-
-#     customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name='customer')
-#     resource = models.ForeignKey(Resource, on_delete=models.CASCADE, related_name='resources')
-
-#     total_cost = models.DecimalField(max_digits=10, decimal_places=2, help_text="Total cost of the resource usage.")
-#     usage_start_date = models.DateTimeField(help_text="Start date of resource usage.")
-#     usage_end_date = models.DateTimeField(help_text="End date of resource usage.")
-#     payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, default='pending')
-
-# class Notification(models.Model):
-#     subscription = models.ForeignKey("SubSync.Subscription", on_delete=models.CASCADE, related_name="notifications")
-#     hardware = models.ForeignKey(Hardware, null=True, blank=True, on_delete=models.CASCADE)
-#     Customer = models.ForeignKey(Customer, null=True, blank=True, on_delete=models.CASCADE)
-
-#     message = models.TextField()
-#     is_read = models.BooleanField(default=False)
-#     created_at = models.DateTimeField(default=now)
-
-#     def __str__(self):
-#         return f"Notification for {self.subscription} - {self.message[:20]}"
-# models.py
 class Notification(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     subscription = models.ForeignKey(Subscription, on_delete=models.CASCADE, null=True, blank=True)

@@ -8,9 +8,6 @@ def setup_periodic_tasks():
     schedule_1, _ = IntervalSchedule.objects.get_or_create(
         every=1, period=IntervalSchedule.HOURS
     )
-    # schedule_1, _ = IntervalSchedule.objects.get_or_create(
-    # every=5, period=IntervalSchedule.MINUTES  # Change HOURS → MINUTES
-    # )
     PeriodicTask.objects.update_or_create(
         name="Update Subscription Status",
         defaults={
@@ -126,18 +123,5 @@ def setup_periodic_tasks():
             "kwargs": json.dumps({})
         }
     )
-
-    # schedule_9, _ = IntervalSchedule.objects.get_or_create(
-    #     every=5, period=IntervalSchedule.MINUTES
-    # )
-    # PeriodicTask.objects.update_or_create(
-    #     name="hardware reminder",
-    #     defaults={
-    #         "interval": schedule_9,
-    #         "task": "SubSync.tasks.send_hardware_reminders",
-    #         "args": json.dumps([]),
-    #         "kwargs": json.dumps({})
-    #     }
-    # )
     
     print("Periodic tasks have been set up successfully!")

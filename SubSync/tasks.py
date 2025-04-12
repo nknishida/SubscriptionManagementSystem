@@ -1,194 +1,28 @@
-# from celery import shared_task
-# from django.core.mail import send_mail
-# from SubSync.models import Reminder
-# from SubscriptionManagementSystem.settings import DEFAULT_FROM_EMAIL
-# import logging
-
-# logger = logging.getLogger(__name__)
-
-# @shared_task
-# def send_reminder_email(reminder_id):
-#     """Send reminder email and update the next reminder date."""
-#     logger.info(f"Starting send_reminder_email task for reminder ID: {reminder_id}")
-#     try:
-#         reminder = Reminder.objects.get(id=reminder_id)
-
-#         # Fetch the associated ReminderSubscription
-#         reminder_for_subscription = reminder.subscription_reminder.first()
-#         logger.info(f"Reminder for subscription: {reminder_for_subscription}")
-#         if not reminder_for_subscription:
-#             logger.error(f"No subscription found for reminder ID: {reminder_id}")
-#             return
-        
-#         # Fetch the Subscription from the ReminderSubscription
-#         subscription = reminder_for_subscription.subscription
-#         logger.info(f"Subscription found: {subscription}")
-        
-#         logger.info(f"Sending reminder email for reminder ID: {reminder_id}")
-
-#         subject = f"Reminder: For {reminder.reminder_type}"
-#         message = reminder.custom_message or "This is a reminder for your subscription."
-#         recipients = reminder.recipients.split(",") if reminder.recipients else []
-#         logger.info(f"Recipients: {recipients}")
-
-#         send_mail(subject, message, DEFAULT_FROM_EMAIL, recipients)
-#         logger.info("Email sent successfully.")
-
-#         if subscription:
-#             reminder_dates = reminder.calculate_all_reminder_dates(subscription)
-#             logger.info(f"Calculated reminder dates: {reminder_dates}")
-#             print(reminder_dates)
-
-#             if reminder_dates:
-#                 next_reminder_date = reminder_dates[0]  # Get the next reminder date
-#                 reminder.reminder_date = next_reminder_date
-#                 reminder.save()
-#                 logger.info(f"Updated reminder_date to: {next_reminder_date}")
-                
-#     except Exception as e:
-#         logger.error(f"Error sending reminder email: {e}")
-
-
-
-
-
 from datetime import timedelta
 import os
 from django.utils import timezone
 from celery import shared_task
 from django.core.mail import send_mail
-from SubSync.models import Reminder
+from SubSync.models import Reminder,HardwareService,Notification, Subscription, Hardware, Customer, User, Warranty,ReminderCustomer,ReminderHardware
 from SubscriptionManagementSystem.settings import DEFAULT_FROM_EMAIL
+from django.utils.timezone import now
+from django.db import transaction,connection
+from django.template.loader import render_to_string
+from twilio.rest import Client
+from django.conf import settings
+from django.utils import timezone
+import pytz
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
 
 import logging
-
 logger = logging.getLogger(__name__)
 
-# @shared_task
-# def send_reminder_notification(reminder_id):
-#     print("\n*************************************************************************************************************************************")
+# Load Twilio credentials
+TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID')
+TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN')
+TWILIO_PHONE_NUMBER = os.getenv('TWILIO_PHONE_NUMBER')  #Twilio sender number
 
-#     """Send reminder notifications based on the selected notification method."""
-#     logger.info(f"Starting send_reminder_notification task for reminder ID: {reminder_id}")
-
-#     try:
-#         reminder = Reminder.objects.get(id=reminder_id)
-#         subscription = reminder.subscription_reminder.first().subscription if reminder.subscription_reminder.exists() else None
-#         logger.info(f"Subscription found: {subscription}")
-
-#         if not subscription:
-#             logger.error(f"No subscription found for reminder ID: {reminder_id}")
-#             return
-        
-#         # Stop reminders if the subscription is paid
-#         # if subscription.payment_status == "Paid":
-#         #     logger.info(f"Subscription ID {subscription.id} is paid. Stopping reminders.")
-#         #     return
-        
-#         logger.info(f"Sending reminder for reminder ID: {reminder_id}")
-
-#         if subscription.status == "Expired" or subscription.payment_status == "Unpaid":
-#             # Update reminder_type to "overdue" if it's not already set
-#             if reminder.reminder_type != "overdue":
-#                 reminder.reminder_type = "overdue"
-#                 reminder.save()
-#                 logger.info(f"Updated reminder_type to 'overdue' for reminder ID: {reminder_id}")
-#             logger.info(f"Sending overdue reminder for reminder ID: {reminder_id}")
-
-#             subject = f"Overdue Reminder: {reminder.reminder_type} for "
-#             message = "This is an overdue reminder for your subscription ."
-
-#         else:
-#             subject = f"Reminder: {reminder.reminder_type} for active subscription "
-#             message = reminder.custom_message or "This is a reminder for your subscription ."
-#         recipients = reminder.recipients.split(",") if reminder.recipients else []
-#         logger.info(f"Recipients: {recipients}")
-
-#         # Send notifications based on the selected method
-#         if reminder.notification_method == "email" or reminder.notification_method == "both":
-#             if recipients:
-#                 try:
-#                     logger.info(f"Sending email reminder to: {recipients}")
-#                     send_mail(subject, message, DEFAULT_FROM_EMAIL, recipients)
-#                     logger.info("Email notification sent successfully.")
-#                 except Exception as e:
-#                     logger.error(f"Failed to send email notification: {e}")
-#             else:
-#                 logger.warning("No recipients found for email notification.")
-
-#         if reminder.notification_method == "sms" or reminder.notification_method == "both":
-#             phone_numbers = reminder.phone_numbers.split(",") if reminder.phone_numbers else []
-#             if phone_numbers:
-#                 try:
-#                     logger.info(f"Sending SMS reminder to: {phone_numbers}")
-#                     send_sms_notification(phone_numbers, message)
-#                     logger.info("SMS notification sent successfully.")
-#                 except Exception as e:
-#                     logger.error(f"Failed to send SMS notification: {e}")
-#             else:
-#                 logger.warning("No phone numbers found for SMS notification.")
-
-#         try:
-#             logger.info("Sending in-app notification for reminder.")
-#             send_in_app_notification(subscription, message)
-#             # logger.info("In-app notification sent.")
-#         except Exception as e:
-#             logger.error(f"Failed to send in-app notification: {e}")
-        
-#         logger.info("Reminder notifications sent successfully.")
-        
-#         # Debugging: Log subscription status and payment status again
-#         logger.info(f"Subscription status: {subscription.status}")
-#         logger.info(f"Subscription payment status: {subscription.payment_status}")
-
-#         if subscription.status == "Expired" or subscription.payment_status == "Unpaid":
-#             # Schedule the next overdue reminder
-#             today=timezone.now().date()
-#             logger.info(f"Today's date: {today}, Current reminder date: {reminder.reminder_date}")
-#             # if not reminder.reminder_date or reminder.reminder_date < next_overdue_reminder_date:
-#             if  reminder.reminder_date < today:
-#                 next_overdue_reminder_date = today + timedelta(days=3)  # Adjust the interval as needed
-#                 reminder.reminder_date = next_overdue_reminder_date
-#                 reminder.save()
-#                 logger.info(f"Scheduled next overdue reminder for: {next_overdue_reminder_date}")
-#             else:
-#                 logger.info("Next overdue reminder already scheduled.")
-#         else:
-#             # Update next reminder date
-#             reminder_dates = reminder.calculate_all_reminder_dates(subscription)
-#             logger.info(f"Calculated reminder dates: {reminder_dates}")
-#             if reminder_dates:
-#                 # Find the index of the current reminder date
-#                 current_date = timezone.now().date()
-#                 try:
-#                     current_index = reminder_dates.index(current_date)
-#                 except ValueError:
-#                     logger.warning(f"Current date {current_date} not found in reminder dates. Skipping reminder date update.")
-#                     return
-
-#                 # Check if there is a next date in the list
-#                 if current_index + 1 < len(reminder_dates):
-#                     next_reminder_date = reminder_dates[current_index + 1]
-#                     reminder.reminder_date = next_reminder_date
-#                     reminder.save()
-#                     logger.info(f"Updated reminder_date to: {next_reminder_date}")
-#                 else:
-#                     logger.info("No more reminder dates. Resetting reminder_date to None.")
-#                     reminder.reminder_date = None
-#                     reminder.save()
-#                     # next_reminder_date = reminder_dates[0]
-#                     # reminder.reminder_date = next_reminder_date
-#                     # reminder.save()
-#                     logger.info(f"Updated reminder_date to: {next_reminder_date}")
-#             else:
-#                 logger.warning("No reminder dates calculated. Skipping reminder date update.")
-
-#     except Exception as e:
-#         logger.error(f"Error sending reminder notifications: {e}")
-
-# from django.contrib.auth import get_user_model
-
-# User = get_user_model()
 
 @shared_task
 def send_reminder_notification(reminder_id,user_id=None):
@@ -331,56 +165,6 @@ def send_reminder_notification(reminder_id,user_id=None):
         logger.error(f"Error sending reminder notifications: {e}")
 
 
-
-
-
-# def send_in_app_notification(subscription, message):
-#     from SubSync.tasks import send_reminder_notification
-#     """Mock function to send in-app notifications."""
-#     try:
-#         # Assuming you have a Notification model
-#         from SubSync.models import Notification
-
-#         Notification.objects.create(
-#             subscription=subscription,
-#             message=message
-#         )
-#         logger.info(f"In-app notification created for subscription ID: {subscription.id}")
-#         return True
-#     except Exception as e:
-#         logger.error(f"Failed to create in-app notification: {e}")
-#         return False
-
-def send_in_app_notification(entity, message):
-    """Send in-app notifications for subscriptions and hardware."""
-    try:
-        # Import Notification model
-        from SubSync.models import Notification
-
-        # Determine entity type
-        entity_type = "Subscription" if hasattr(entity, "payment_status") else "Hardware"
-        entity_id = entity.id
-
-        # Create in-app notification
-        Notification.objects.create(
-            subscription=entity if entity_type == "Subscription" else None,
-            hardware=entity if entity_type == "Hardware" else None,
-            message=message
-        )
-
-        logger.info(f"In-app notification created for {entity_type} ID: {entity_id}")
-        return True
-
-    except Exception as e:
-        logger.error(f"Failed to create in-app notification: {e}")
-        return False
-
-
-from celery import shared_task
-from django.utils import timezone
-from datetime import timedelta
-from .models import Notification, Subscription, Hardware, Customer, User, Warranty
-
 @shared_task
 def delete_old_recycle_bin_items():
     """
@@ -394,9 +178,6 @@ def delete_old_recycle_bin_items():
     Customer.objects.filter(is_deleted=True, deleted_at__lte=thirty_days_ago).delete()
 
     return "Old items permanently deleted"
-
-from django.utils.timezone import now
-from django.db import transaction,connection
 
 @shared_task
 def update_subscriptions_status():
@@ -425,6 +206,7 @@ def update_subscriptions_status():
             # end_date={subscription.end_date}, "
             f"next_payment_date={subscription.next_payment_date}, today={today}"
         )
+
         # Check if the end date has passed
         # if subscription.end_date and today > subscription.end_date:
         #     logger.info(f"Updating subscription {subscription.id} to Inactive")
@@ -454,9 +236,6 @@ def update_subscriptions_status():
                 subscription.payment_status = "Paid"
                 subscription.status = "Active" 
 
-        # subscription.save(update_fields=['status', 'payment_status'])
-        # logger.info(f"Subscription {subscription.id} updated: status={subscription.status}, payment_status={subscription.payment_status}")
-
         # Add only if status or payment_status changed
         if (subscription.status != original_status or subscription.payment_status != original_payment_status or subscription.last_payment_date != original_last_payment or subscription.next_payment_date != original_next_payment):
             logger.info(
@@ -485,22 +264,11 @@ def update_warranty_status():
     warranties = Warranty.objects.all()
     
     for warranty in warranties:
-        # original_status = warranty.status
-        # warranty.update_warranty_status()
         
-        # if warranty.status != original_status:
-        #     print(f"Updated warranty for {warranty.hardware}: {original_status} -> {warranty.status}")
         warranty.save()
     
     return "Warranty status updated successfully"
 
-from celery import shared_task
-from django.utils.timezone import now
-from django.db import transaction
-import logging
-from .models import Customer
-
-logger = logging.getLogger(__name__)
 
 @shared_task
 def update_customer_status():
@@ -547,13 +315,6 @@ def clean_old_history(days_to_keep=90):
     # Delete in chunks
     Subscription.history.filter(history_date__lt=cutoff).delete()
 
-from celery import shared_task
-from django.utils import timezone
-from datetime import timedelta
-from .models import HardwareService
-import logging
-
-logger = logging.getLogger(__name__)
 
 @shared_task
 def update_hardware_service_statuses():
@@ -609,20 +370,10 @@ def update_hardware_service_statuses():
         logger.error(f"Error updating hardware service statuses: {str(e)}")
         raise
 
-from celery import shared_task
-from django.utils import timezone
-from .models import Reminder
-from django.core.mail import send_mail
-from django.template.loader import render_to_string
 
 @shared_task
 def send_due_reminders():
     """Send all reminders that are due today."""
-    # now = timezone.now()
-    # logger.info(f"Current server time: {now}")
-    # logger.info(f"Current server date: {now.date()}")
-    from django.utils import timezone
-    import pytz
     
     # Get current time in configured timezone
     tz = pytz.timezone('Asia/Kolkata')
@@ -748,8 +499,6 @@ def send_due_reminders():
             )
             # Send WebSocket message
             try:
-                from channels.layers import get_channel_layer
-                from asgiref.sync import async_to_sync
                 channel_layer = get_channel_layer()
             except Exception as e:
                 channel_layer = None
@@ -816,17 +565,6 @@ def schedule_next_reminder(reminder, subscription):
         reminder.save()
 
 
-import logging
-from twilio.rest import Client
-from django.conf import settings
-
-logger = logging.getLogger(__name__)
-
-# Load Twilio credentials from Django settings (or you can use environment variables)
-TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID')
-TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN')
-TWILIO_PHONE_NUMBER = os.getenv('TWILIO_PHONE_NUMBER')  # Your Twilio sender number
-
 def send_sms_notification(phone, message):
     """Send SMS notifications using Twilio."""
     try:
@@ -849,21 +587,10 @@ def send_sms_notification(phone, message):
         return False
 
 
-
 @shared_task
 def send_hardware_reminders():
     """Send all hardware reminders that are due today."""
-    from django.utils import timezone
-    import pytz
-    from datetime import timedelta
-    from django.core.mail import send_mail
-    from django.conf import settings
-    import os
-    import logging
-    from .models import Reminder, ReminderHardware, Notification
-    
-    logger = logging.getLogger(__name__)
-    
+        
     # Initialize timezone
     tz = pytz.timezone('Asia/Kolkata')
     now = timezone.now().astimezone(tz)
@@ -873,8 +600,6 @@ def send_hardware_reminders():
     try:
         # Initialize channel layer for WebSocket notifications
         try:
-            from channels.layers import get_channel_layer
-            from asgiref.sync import async_to_sync
             channel_layer = get_channel_layer()
         except Exception as e:
             channel_layer = None
@@ -994,16 +719,6 @@ def send_hardware_reminders():
 @shared_task
 def send_customer_reminders():
     """Send all customer reminders that are due today."""
-    from django.utils import timezone
-    import pytz
-    from datetime import timedelta
-    from django.core.mail import send_mail
-    from django.conf import settings
-    import os
-    import logging
-    from .models import Reminder, ReminderCustomer, Notification
-    
-    logger = logging.getLogger(__name__)
     
     # Initialize timezone
     tz = pytz.timezone('Asia/Kolkata')
@@ -1014,8 +729,6 @@ def send_customer_reminders():
     try:
         # Initialize channel layer for WebSocket notifications
         try:
-            from channels.layers import get_channel_layer
-            from asgiref.sync import async_to_sync
             channel_layer = get_channel_layer()
         except Exception as e:
             channel_layer = None

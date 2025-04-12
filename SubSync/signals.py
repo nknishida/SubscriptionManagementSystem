@@ -1,10 +1,11 @@
-from django.db.models.signals import post_save
-from django.dispatch import receiver
-from SubSync.views import cancel_scheduled_tasks
-from .models import Reminder, Subscription
-from .utils import schedule_reminder_tasks
-import logging
-logger = logging.getLogger(__name__)
+# from django.db.models.signals import post_save
+# from django.dispatch import receiver
+# from SubSync.views import cancel_scheduled_tasks
+# from .models import Reminder, Subscription
+# from .utils import schedule_reminder_tasks
+
+# import logging
+# logger = logging.getLogger(__name__)
 
 # @receiver(post_save, sender=Reminder)
 # def handle_reminder_creation(sender, instance, created, **kwargs):
@@ -55,10 +56,6 @@ logger = logging.getLogger(__name__)
 #         except Exception as e:
 #             logger.error(f"Error handling reminder creation: {e}")
 
-
-
-from django.db.models.signals import post_save
-from django.dispatch import receiver
 
 # @receiver(post_save, sender=Subscription)
 # def handle_subscription_update(sender, instance , created, **kwargs):

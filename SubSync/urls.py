@@ -24,27 +24,26 @@ urlpatterns = [
     path('token/refresh/', CustomTokenRefreshView.as_view(), name='token_refresh'),
 
 
-    path('dashboard_overview/', DashboardOverview.as_view(), name='dashboard_overview'),
+    # path('dashboard_overview/', DashboardOverview.as_view(), name='dashboard_overview'),
     path('dashboard/', DashboardOverviewAll.as_view(), name='all'),
     path('expenditure-analysis/', ExpenditureAnalysisView.as_view(), name='total-expenditure-analysis'),
 
 
     path('add-subscription/', SubscriptionCreateView.as_view(), name='add-subscription'),
     path('subscriptions/', SubscriptionListView.as_view(), name='subscriptions-list'),  # GET for listing & filtering
-    # path('subscriptions/<int:id>/', SubscriptionDetailView.as_view(), name='subscription-detail'),
     path("subscriptions/<int:pk>/", SubscriptionDetailUpdateView.as_view(), name="subscription-detail-update"),
     path('subscriptions_warnings/', WarningSubscriptionsView.as_view(), name='warning-subscriptions'),
-     path('subscriptions/delete/<int:subscription_id>/', SubscriptionSoftDeleteAPIView.as_view(), name='subscription-soft-delete'),
-
-
-    path('subscriptions_active/', ActiveSubscriptionsView.as_view(), name='active-subscriptions'),
-    path('subscriptions_expired/', ExpiredSubscriptionsView.as_view(), name='expired-subscriptions'),
-    path('subscription_count/', SubscriptionCountView.as_view(), name='subscription-count'),
-    path('subscriptions_category_distribution/', SubscriptionCategoryDistributionView.as_view(), name='category-distribution'),
-    path('subscriptions_monthly-analysis/', SubscriptionMonthlyAnalysisView.as_view(), name='monthly-analysis'),
-    # path("subscriptions/expenditure/", ExpenditureAnalysisView.as_view(), name="expenditure-analysis"),
+    path('subscriptions/delete/<int:subscription_id>/', SubscriptionSoftDeleteAPIView.as_view(), name='subscription-soft-delete'),
     path("subscription_choices/", SubscriptionChoicesView.as_view(), name="subscription-choices"),
     path('subscription-report/', SubscriptionReportView.as_view(), name='subscription-report'),
+
+    path('subscriptions/<int:id>/', SubscriptionDetailView.as_view(), name='subscription-detail'),
+    # path('subscriptions_active/', ActiveSubscriptionsView.as_view(), name='active-subscriptions'),
+    # path('subscriptions_expired/', ExpiredSubscriptionsView.as_view(), name='expired-subscriptions'),
+    # path('subscription_count/', SubscriptionCountView.as_view(), name='subscription-count'),
+    # path('subscriptions_category_distribution/', SubscriptionCategoryDistributionView.as_view(), name='category-distribution'),
+    # path('subscriptions_monthly-analysis/', SubscriptionMonthlyAnalysisView.as_view(), name='monthly-analysis'),
+    # path("subscriptions/expenditure/", ExpenditureAnalysisView.as_view(), name="expenditure-analysis"),
    
    
     path('providers/', ProviderCreateView.as_view(), name='provider-create'),
@@ -54,16 +53,15 @@ urlpatterns = [
     path('hardware/add/', AddHardwareAPIView.as_view(), name='add-hardware'),
     path('hardware/', ListHardwareView.as_view(), name='list-hardware'),
     path('hardware/<int:pk>/', RetrieveUpdateDestroyHardwareView.as_view(), name='retrieve-update-hardware'),
-
-    path('hardware_summary/', HardwareSummaryView.as_view(), name='hardware-summary'),
-    path("upcoming_hardware/", UpcomingHardwareAPIView.as_view(), name="upcoming-hardware"),
-    path('hardware-report/', hardware_report, name='hardware-report'),
-    path('spending-reports/', spending_report, name='spending-reports'),
     path("yearly-hardware-cost/", YearlyHardwareCostBreakdownAPIView.as_view(), name="yearly-hardware-cost"),
 
+    # path('hardware_summary/', HardwareSummaryView.as_view(), name='hardware-summary'),
+    # path("upcoming_hardware/", UpcomingHardwareAPIView.as_view(), name="upcoming-hardware"),
+    # path('hardware-report/', hardware_report, name='hardware-report'),
+    # path('spending-reports/', spending_report, name='spending-reports'),
 
-    path('reminders/', ReminderAPIView.as_view(), name='reminder-list'),
-    path('reminders/<int:pk>/', ReminderAPIView.as_view(), name='reminder-detail'),
+    # path('reminders/', ReminderAPIView.as_view(), name='reminder-list'),
+    # path('reminders/<int:pk>/', ReminderAPIView.as_view(), name='reminder-detail'),
 
     path('resources/names/', ResourceNameListView.as_view(), name='resource-names'),
     path('resources/add/', ResourceCreateView.as_view(), name='resource-add'),
@@ -71,12 +69,12 @@ urlpatterns = [
     path('resources/<int:pk>/', ResourceDetailUpdateView.as_view(), name='resource-detail'),
     path('servers-by-hosting-type/', ServerListByHostingTypeAPIView.as_view(), name='get_servers_by_hosting_type'),
 
+
     # path("notifications/", NotificationListView.as_view(), name="notification-list"),
     # path("notifications/<int:pk>/", MarkNotificationAsReadView.as_view(), name="mark-notification-read"),
 
     path('notifications/', NotificationListAPI.as_view(), name='notifications-list'),
     path('notifications/<int:pk>/read/', MarkNotificationReadAPI.as_view(), name='mark-notification-read'),
-
 
 
     path("server-usage/", ServerUsageView.as_view(), name="server-usage"),
